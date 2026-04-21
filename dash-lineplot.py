@@ -214,8 +214,8 @@ except ImportError:
         exit(-1)
             
 import dash
-import dash_core_components as dcc
-import dash_html_components as html
+from dash import dcc
+from dash import html
 from dash.dependencies import Input, Output, State
 from plotly import subplots
 import visdcc
@@ -938,7 +938,7 @@ class DashLinePlot():
             # make 'Index' column the index
             dft = dft.set_index('Index')
             # append this sheet to the master data frame
-            dfPlotterConfig = dfPlotterConfig.append(dft)
+            dfPlotterConfig = pd.concat([dfPlotterConfig, dft])
 
 ###########################################################################
     def readdatafile(self, filename):
