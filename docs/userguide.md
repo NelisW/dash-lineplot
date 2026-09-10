@@ -348,11 +348,16 @@ graph until the next `Title`.
 | `Datafile` | Master data file. A graph sheet selects it with the keyword `master`. |
 | `Density` | `compact` or `comfortable`. Defaults to `compact`. |
 
-`Density` controls how tightly the page is packed. `compact` reduces
-heading sizes, shrinks the gaps around the graphs and their readout boxes,
-and separates graphs with a thin rule instead of blank space. `comfortable`
-restores the roomier original spacing. On a four-graph page the compact
-layout is about a third shorter.
+`Density` controls how tightly the page is packed.
+
+`compact` reduces the heading sizes, removes the vertical space between one
+graph row and the next entirely, and tightens the margins Plotly reserves
+around each plot so that the data area fills roughly 70 percent of the
+graph rather than 40. `comfortable` restores the roomier original spacing
+and leaves Plotly's default margins alone.
+
+Measured on a seven-graph page with `Height` set to 240: 1940 px compact
+against 4286 px comfortable.
 
 ### Mixing sample rates on one tab
 
@@ -433,9 +438,26 @@ onto shared axes.
 ### Page layout
 
 Every page carries, from top to bottom: the row of tabs, the header
-markdown from `PageTop`, then for each graph its `GraphTop` markdown, the
-graph itself, the two data feedback boxes, and its `GraphBottom` markdown.
-The `PageBottom` markdown closes the page.
+markdown from `PageTop`, then the `GraphTop` markdown, then one row per
+graph, then the `GraphBottom` and `PageBottom` markdown.
+
+Each graph occupies a row of its own, with the graph on the left and its
+two readout boxes stacked in a narrow column on the right:
+
+```text
++-------------------------------------------+  +-----------------+
+|                                           |  | Click Data      |
+|                  graph                    |  +-----------------+
+|                                           |  | Rectangle Tool  |
++-------------------------------------------+  +-----------------+
+```
+
+Keeping the readouts beside the graph rather than beneath it is what lets
+consecutive graphs sit directly against one another. In the compact
+density there is no vertical space at all between one graph row and the
+next, so a page is exactly as tall as its graphs.
+
+The height of each graph is the sheet's `Height` value, in pixels.
 
 Select a tab to display its graphs. Graphs are drawn when the tab is first
 selected rather than when the page loads, so the first selection of a tab

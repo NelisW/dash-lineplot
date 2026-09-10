@@ -8,18 +8,42 @@
  *
  * The class is set on the outermost page div from the Density header
  * variable: density-compact (the default) or density-comfortable.
+ *
+ * Layout of one graph, in both densities:
+ *
+ *     .graph-row  (row)
+ *         .nine.columns    the graph
+ *         .three.columns   .feedback-column
+ *                              .feedback-box   Click Data
+ *                              .feedback-box   Rectangle Tool Selection Data
+ *
+ * The readouts sit beside the graph rather than beneath it, so consecutive
+ * graphs can sit almost touching.
  */
+
+/* ---------- shared ---------- */
+
+.feedback-column {
+    /* the readouts are secondary: let the graph set the row height */
+    overflow: hidden;
+}
+
+.feedback-box pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: auto;
+}
 
 /* ---------- compact ---------- */
 
-.density-compact h1 { font-size: 2.6rem; margin-top: 0.6rem; margin-bottom: 0.6rem; }
-.density-compact h2 { font-size: 2.2rem; margin-top: 0.5rem; margin-bottom: 0.5rem; }
-.density-compact h3 { font-size: 1.9rem; margin-top: 0.4rem; margin-bottom: 0.4rem; }
+.density-compact h1 { font-size: 2.4rem; margin-top: 0.4rem; margin-bottom: 0.3rem; }
+.density-compact h2 { font-size: 2.0rem; margin-top: 0.3rem; margin-bottom: 0.3rem; }
+.density-compact h3 { font-size: 1.7rem; margin-top: 0.3rem; margin-bottom: 0.2rem; }
 .density-compact h4,
 .density-compact h5,
-.density-compact h6 { font-size: 1.6rem; margin-top: 0.4rem; margin-bottom: 0.4rem; }
+.density-compact h6 { font-size: 1.5rem; margin-top: 0.2rem; margin-bottom: 0.2rem; }
 
-.density-compact p { margin-bottom: 0.5rem; }
+.density-compact p { margin-bottom: 0.3rem; }
 
 /* Markdown blocks above and below each graph. */
 .density-compact .dash-markdown,
@@ -27,28 +51,43 @@
 .density-compact div[id^="botMarkdown-"],
 .density-compact div[id^="headerMarkdown-"],
 .density-compact div[id^="footerMarkdown-"] {
+    margin-top: 0.1rem;
+    margin-bottom: 0.1rem;
+}
+
+/* One graph and its readouts. Near-zero separation from the next row: the
+   graph itself carries the only breathing space, inside the Plotly figure. */
+.density-compact .graph-row {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.density-compact .graph-row .columns {
+    margin-bottom: 0;
+}
+
+.density-compact .js-plotly-plot {
+    margin: 0;
+}
+
+/* The readout boxes: small, quiet, and never taller than the graph. */
+.density-compact .feedback-box {
     margin-top: 0.2rem;
     margin-bottom: 0.2rem;
 }
 
-/* The click and selection feedback boxes: smaller type, tighter box, and
-   no large gap between the graph and its readouts. */
-.density-compact pre[id^="click-"],
-.density-compact pre[id^="select-"] {
-    font-size: 1.05rem;
-    line-height: 1.25;
-    margin-top: 0.1rem;
-    margin-bottom: 0.4rem;
-    padding: 0.3rem 0.5rem;
+.density-compact .feedback-box p {
+    margin: 0 0 0.1rem 0;
+    font-size: 1.1rem;
+    line-height: 1.2;
 }
 
-.density-compact .row { margin-bottom: 0.3rem; }
-
-/* Separate one graph from the next with a thin rule rather than blank space. */
-.density-compact .graph-separator {
-    border: 0;
-    border-top: 1px solid #e1e1e1;
-    margin: 0.4rem 0 0.5rem 0;
+.density-compact .feedback-box pre {
+    font-size: 1.0rem;
+    line-height: 1.2;
+    margin: 0;
+    padding: 0.2rem 0.4rem;
+    min-height: 3.2rem;
 }
 
 /* The tab strip itself. */
@@ -56,12 +95,14 @@
 
 /* ---------- comfortable ---------- */
 
-/* The original spacing, kept so a config can ask for it explicitly. Only
-   the graph separator is new; everything else falls through to the base
-   stylesheet untouched. */
+/* The roomier original spacing, kept so a config can ask for it. The
+   readouts still sit beside the graph; only the spacing differs. */
 
-.density-comfortable .graph-separator {
-    border: 0;
-    border-top: 1px solid #e1e1e1;
-    margin: 1.5rem 0;
+.density-comfortable .graph-row {
+    margin-top: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.density-comfortable .feedback-box {
+    margin-bottom: 1rem;
 }

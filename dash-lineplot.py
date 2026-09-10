@@ -477,26 +477,28 @@ class DashLinePlot():
         # https://dash.plot.ly/interactive-graphing
         # https://dash.plot.ly/dash-html-components/pre
 
+        # The boxes sit in a narrow column beside the graph, so they stack
+        # vertically rather than sharing a row of their own.
         clickDiv = html.Div(
                         [
-                            dcc.Markdown(""" **Click Data** """), 
+                            dcc.Markdown(""" **Click Data** """),
                             html.Pre(id='click-'+ id, style=boxStyle),
-                        ], 
-                        className='four columns'
+                        ],
+                        className='feedback-box'
                     )
 
         rectangleDiv =  html.Div(
                             [
                                 dcc.Markdown(""" **Rectangle Tool Selection Data** """),
                                 html.Pre(id='select-'+ id, style=boxStyle),
-                            ], 
-                            className='four columns'
+                            ],
+                            className='feedback-box'
                         )
 
         if isMarkers:
-            return html.Div(className='row', children=[ clickDiv, rectangleDiv ])
+            return html.Div(className='feedback-column', children=[ clickDiv, rectangleDiv ])
         else:
-            return html.Div(className='row', children=[ clickDiv ])
+            return html.Div(className='feedback-column', children=[ clickDiv ])
                 
 
     def graphToDisk(self, figdict, fbasename):
@@ -911,33 +913,55 @@ class DashLinePlot():
                                     'plot_bgcolor': backgroundColor,
                                     },
                             'data':thisGraphData}
+
+                # Plotly's default margins reserve about 100 px above and 80 px
+                # below the plot area. On a short graph that leaves a thin strip
+                # of data between two bands of white, so the compact layout
+                # claims that space back: just enough for the title and the
+                # axis labels.
+                if pageDensity == 'compact':
+                    figdict['layout']['margin'] = {'l': 60, 'r': 20,
+                                                   't': 34, 'b': 38}
+                    figdict['layout']['title'] = {'text': grTitle,
+                                                  'font': {'size': 13},
+                                                  'x': 0.01, 'xanchor': 'left',
+                                                  'y': 0.98, 'yanchor': 'top'}
            
                 #  store the id of this set - to be used in callback function generation
                 #  we mark all relevant Divs with this string
                 grID = graph+setStr
                 grList.append(grID)
 
-                # Div with dcc.Graph using the figdict
+                # One row per graph: the graph on the left, its click and
+                # selection readouts stacked in a narrow column on the right.
+                # Keeping them side by side is what lets successive graphs sit
+                # almost touching, since the readouts no longer consume a band
+                # of page width-wise between one graph and the next.
+                # Height needs a CSS unit. It used to be emitted as a bare
+                # string, e.g. '240', which is not valid CSS: the browser
+                # dropped it and every graph silently fell back to Plotly's
+                # 450 px default, whatever the configuration asked for.
+                graphStyle = {'padding': 0 if pageDensity == 'compact' else 20}
+                try:
+                    graphStyle['height'] = f"{int(float(dft.loc['Height','Value']))}px"
+                except (TypeError, ValueError):
+                    pass
+
                 thisDivList.append(
-                    html.Div
-                    (
-                        [
+                    html.Div(className='row graph-row', children=[
+                        html.Div(className='nine columns', children=[
                             dcc.Graph
                             (
                                 id=grID,
                                 figure=figdict,
-                                style={'height': str(dft.loc['Height','Value']),
-                                       'padding': 2 if pageDensity == 'compact' else 20},
+                                style=graphStyle,
                             )
-                        ]
-                    )
+                        ]),
+                        html.Div(className='three columns', children=[
+                            self.generateFeedbackBoxes(grID, isMarkers)
+                        ]),
+                    ])
                 )
-
-                # Divs for click data and rectangle tool data feedback
-                thisDivList.append(self.generateFeedbackBoxes(grID, isMarkers))
-
-                # thin rule between graphs, in place of a block of blank space
-                thisDivList.append(html.Hr(className='graph-separator'))
 
                 if toDisk:
                     self.graphToDisk(figdict, f'{grDir}/{graph}#{setStr}')
