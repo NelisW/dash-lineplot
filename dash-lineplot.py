@@ -174,6 +174,7 @@ __author__='CJ & MS Willers'
 
 import sys, os
 import json
+import math
 import threading
 import pandas as pd
 import openpyxl as oxl
@@ -214,7 +215,153 @@ def resource_path(relative_path):
 # set. Extra columns beyond this list are preserved.
 CONFIG_COLUMNS = ['Variable', 'Value', 'Format', 'LineLabel', 'GraphType',
                   'Scale', 'Offset', 'Colour', 'Linewidth', 'Dash', 'Mode',
-                  'MarkerOpacity']
+                  'MarkerOpacity', 'Categories', 'Datafile']
+
+################################################################
+def splitDataRef(dataref):
+    """
+    Split a data reference into a file name and an optional group name.
+
+    A reference may carry a '#group' fragment naming one group inside a
+    multi-rate JSON file, as in 'out/run.json#gimbal_1ms'. A reference with
+    no fragment means the whole file, which is what every non-JSON format
+    and every single-rate JSON file uses.
+
+    Args:
+        | dataref (string): the Datafile value from the configuration.
+
+    Returns:
+        | filename (string): the file name, fragment removed.
+        | group (string): the group name, or None if no fragment was given.
+
+    """
+    filename, hashmark, group = str(dataref).partition('#')
+    return filename, group if hashmark else None
+
+################################################################
+def readJsonData(path, group):
+    """
+    Read a JSON data file into a DataFrame.
+
+    Two shapes are accepted, and which one a file uses is declared by its
+    own structure rather than inferred from the data:
+
+    A top-level list is a single record array, one object per sample. This
+    is the single-rate form, and a group must not be named.
+
+    A top-level object is a set of named groups, each holding its own record
+    array with its own time column. This is the multi-rate form: each group
+    becomes a separate DataFrame and nothing is merged, resampled or aligned
+    between them. A group must be named, using a '#group' fragment on the
+    Datafile value.
+
+    Args:
+        | path (string): path to the JSON file.
+        | group (string): group name from the reference fragment, or None.
+
+    Returns:
+        | df (DataFrame): the requested data.
+
+    """
+    with open(path, 'r', encoding='utf-8') as fjson:
+        content = json.load(fjson)
+
+    if isinstance(content, list):
+        if group is not None:
+            raise ValueError(
+                f"{path} is a single record array and holds no groups, but "
+                f"the configuration asks for group '{group}'. Drop the "
+                f"'#{group}' fragment from the Datafile value.")
+        return pd.DataFrame.from_records(content)
+
+    if isinstance(content, dict):
+        available = ', '.join(content.keys()) if content else 'none'
+        if group is None:
+            raise ValueError(
+                f"{path} holds named groups, so the configuration must say "
+                f"which one to plot by appending a fragment to the Datafile "
+                f"value, as in '{os.path.basename(path)}#<group>'. "
+                f"Groups present: {available}.")
+        if group not in content:
+            raise ValueError(
+                f"{path} has no group '{group}'. Groups present: {available}.")
+        return pd.DataFrame.from_records(content[group])
+
+    raise ValueError(
+        f'{path} must hold either a list of samples or an object of named '
+        f'groups, but holds {type(content).__name__}.')
+
+################################################################
+def isEnumSeries(series):
+    """
+    True if this column holds enumeration labels rather than numbers.
+
+    Booleans count as numeric: they already plot as 0 and 1. Anything else
+    that is not numeric is treated as an enumeration, which is the only way
+    a column of state or mode names can be drawn at all.
+
+    Args:
+        | series (Series): the data column.
+
+    Returns:
+        | (bolean): True for an enumeration column.
+
+    """
+    return not (pd.api.types.is_numeric_dtype(series) or
+                pd.api.types.is_bool_dtype(series))
+
+################################################################
+def parseCategories(value):
+    """
+    Read a declared category order from a configuration cell.
+
+    Accepts a JSON list, or a comma-separated string as typed into a
+    spreadsheet cell. Returns None when nothing was declared, in which case
+    the order is taken from the data.
+
+    Args:
+        | value: the Categories cell value.
+
+    Returns:
+        | categories (list): ordered category names, or None.
+
+    """
+    if isinstance(value, (list, tuple)):
+        return [str(v) for v in value]
+    if isinstance(value, str) and value.strip():
+        return [s.strip() for s in value.split(',') if s.strip()]
+    return None
+
+################################################################
+def enumCategories(series, declared=None):
+    """
+    Ordered list of the categories in an enumeration column.
+
+    A declared order is used verbatim, so an axis can be held identical
+    across runs even when a run does not exercise every state. Otherwise
+    the order is order of first appearance in the data, so a mode sequence
+    reads up the axis in the order it happened.
+
+    Values present in the data but absent from a declared list are appended
+    at the end rather than dropped, because silently discarding a state
+    would hide exactly the event worth seeing.
+
+    Args:
+        | series (Series): the enumeration column.
+        | declared (list): category order from the configuration, or None.
+
+    Returns:
+        | categories (list): ordered category names.
+
+    """
+    categories = list(declared) if declared else []
+    for value in series:
+        if value is None or (isinstance(value, float) and math.isnan(value)):
+            continue
+        name = str(value)
+        if name not in categories:
+            categories.append(name)
+    return categories
 
 ################################################################
 def isJsonConfig(configfile):
@@ -487,8 +634,12 @@ class DashLinePlot():
 
         # ------- y data preparation
 
-        # list of yValue values from config, i.e. the name of each variable to plot 
+        # list of yValue values from config, i.e. the name of each variable to plot
         yVariableList = []
+
+        # category labels per trace, aligned with yVariableList: a list of
+        # names for an enumeration column, None for a numeric one
+        enumCatsList = []
 
         # build the traces for all required variables in this graph set
         for index, row in dft[(dft['Variable']=='yValue')].iterrows():
@@ -524,13 +675,52 @@ class DashLinePlot():
                     
             markerDict = { 'opacity': opacity }
 
+            # An enumeration column holds state names and cannot be plotted as
+            # a number. Map it onto integer codes and keep the labels, so the
+            # axis can be relabelled with the names further down. Scale and
+            # Offset are deliberately not applied to an enumeration: they have
+            # no meaning for a state name.
+            # A trace may name its own data file in the Datafile column,
+            # overriding the sheet's. This is what lets one tab carry signals
+            # recorded at different rates: each trace resolves its x and y
+            # against its own frame, and nothing is aligned or resampled
+            # between them.
+            traceDf = df
+            traceX = xData
+            if isinstance(row['Datafile'], str) and row['Datafile'].strip():
+                traceDf = self.datafiles[row['Datafile'].strip()]
+                traceX = traceDf[xVarName] * xscale + xoffset
+
+            ySeries = traceDf[row['Value']]
+            traceCategories = None
+
+            if isEnumSeries(ySeries):
+                traceCategories = enumCategories(ySeries,
+                                                 parseCategories(row['Categories']))
+                codeOf = {name: number for number, name in enumerate(traceCategories)}
+                yValues = [codeOf.get(str(value)) for value in ySeries]
+                hoverText = [str(value) for value in ySeries]
+            else:
+                yValues = ySeries * yscale + yoffset
+                hoverText = None
+
+            enumCatsList.append(traceCategories)
+
             dLines = {
-                'x':xData,
-                'y':df[row['Value']] * yscale + yoffset,
+                'x':traceX,
+                'y':yValues,
                 'line':{},
                 'mode': plotMode,
                 'marker': markerDict,   # we do not want markers but need them for the rectangle tool to appear
             }
+
+            if traceCategories is not None:
+                # A state signal is piecewise constant: it holds a value, then
+                # jumps. A sloped line between two states would draw
+                # intermediate states that never existed.
+                dLines['line']['shape'] = 'hv'
+                dLines['text'] = hoverText
+                dLines['hovertemplate'] = '%{text}<extra></extra>'
 
             # fill in non-default values
             if not np.isnan(row['Linewidth']):
@@ -661,8 +851,12 @@ class DashLinePlot():
                 hfmt_y = dft.loc['yLabel#'+setStr,'Format']
 
             #  determine if the rectangle tool is present
-            #  this will be the case if in any line is using markers 
+            #  this will be the case if in any line is using markers
             isMarkers = False
+
+            #  category labels contributed by every enumeration trace in this
+            #  set, in order, so one axis can carry several state signals
+            setCategories = []
 
             # pack the graph data in
             #  * either a list to be used in the Graph Div
@@ -691,16 +885,30 @@ class DashLinePlot():
                     if 'markers' in graphData[traceNum]['mode']:
                         isMarkers = True
 
+                    # collect the category labels of any enumeration trace
+                    for category in enumCatsList[traceNum] or []:
+                        if category not in setCategories:
+                            setCategories.append(category)
+
             # Not using subplots we create a Graph Div for each set 
             if not useSubplots:
 
-                # create dictionary with the layout and data 
+                # y axis: an enumeration set gets its codes relabelled with the
+                # state names, so the reader sees 'Tracking' and not 1
+                yAxisDict = {'title': yLabel, 'hoverformat': hfmt_y}
+                if setCategories:
+                    yAxisDict['tickmode'] = 'array'
+                    yAxisDict['tickvals'] = list(range(len(setCategories)))
+                    yAxisDict['ticktext'] = setCategories
+                    yAxisDict['range'] = [-0.5, len(setCategories) - 0.5]
+
+                # create dictionary with the layout and data
                 figdict = {'layout':{'title': grTitle,
                                     'xaxis':{'title': xLabel, 'hoverformat': hfmt_x},
-                                    'yaxis':{'title': yLabel, 'hoverformat': hfmt_y},	
+                                    'yaxis':yAxisDict,
                                     'clickmode': 'event+select',
                                     'hovermode': 'x',           # set compare data on hover
-                                    'plot_bgcolor': backgroundColor, 
+                                    'plot_bgcolor': backgroundColor,
                                     },
                             'data':thisGraphData}
            
@@ -718,7 +926,8 @@ class DashLinePlot():
                             (
                                 id=grID,
                                 figure=figdict,
-                                style={'height': str(dft.loc['Height','Value']),'padding':20},
+                                style={'height': str(dft.loc['Height','Value']),
+                                       'padding': 2 if pageDensity == 'compact' else 20},
                             )
                         ]
                     )
@@ -726,7 +935,10 @@ class DashLinePlot():
 
                 # Divs for click data and rectangle tool data feedback
                 thisDivList.append(self.generateFeedbackBoxes(grID, isMarkers))
-                
+
+                # thin rule between graphs, in place of a block of blank space
+                thisDivList.append(html.Hr(className='graph-separator'))
+
                 if toDisk:
                     self.graphToDisk(figdict, f'{grDir}/{graph}#{setStr}')
 
@@ -900,11 +1112,12 @@ class DashLinePlot():
                     ]))
 
         # create the page to be rendered in the browser, using all active tabs as requested via config
+        # the density class drives the spacing rules in assets/density.css
         page = html.Div(
         [
             dcc.Tabs(
-                id='tabs', 
-                value='Tab 0', 
+                id='tabs',
+                value='Tab 0',
                 children=[
                 # following is a list of all tabs with their content
                 *lsttabs,
@@ -912,7 +1125,8 @@ class DashLinePlot():
             ),
 
             html.Div(id='tabs-content'),
-        ]
+        ],
+        className=f'density-{pageDensity}'
         )
 
         # the page now has for example:
@@ -956,6 +1170,18 @@ class DashLinePlot():
         dfPlotterHeader = dfHeader.set_index('Variable')
         masterDataFile =  dfPlotterHeader.loc['Datafile','Value']
 
+        # page density: 'compact' packs the widgets together, 'comfortable'
+        # restores the original roomier spacing. Compact is the default.
+        global pageDensity
+        pageDensity = 'compact'
+        if 'Density' in dfPlotterHeader.index:
+            requested = str(dfPlotterHeader.loc['Density','Value']).strip().lower()
+            if requested in ('compact', 'comfortable'):
+                pageDensity = requested
+            else:
+                print(f"Density '{requested}' not recognised, using 'compact'. "
+                      f"Valid values are 'compact' and 'comfortable'.")
+
         # dataframe to contain ALL the sheets' info
         global dfPlotterConfig
         dfPlotterConfig = pd.DataFrame()
@@ -975,6 +1201,10 @@ class DashLinePlot():
                 if 'Datafile' in row['Variable']:
                     if dft.loc[index,'Value'] == 'master':
                         dft.loc[index,'Value'] = masterDataFile
+                # a yValue row may name its own data file in the Datafile
+                # column, which is how one tab carries several sample rates
+                if dft.loc[index,'Datafile'] == 'master':
+                    dft.loc[index,'Datafile'] = masterDataFile
                 if 'Title' in row['Variable']:
                     theSet = theSet + 1
                     dft.loc[index,'Index'] = f"{row['Variable']}#{theSet:03d}"
@@ -1093,8 +1323,15 @@ class DashLinePlot():
 
         """
 
-        # get data filenames from all sheets
-        datafilenames = dfPlotterConfig[(dfPlotterConfig['Variable']=='Datafile')]['Value'].unique()
+        # get data filenames from all sheets: the per-sheet Datafile rows,
+        # plus any per-trace override named in the Datafile column
+        datafilenames = list(
+            dfPlotterConfig[(dfPlotterConfig['Variable']=='Datafile')]['Value'].unique())
+        if 'Datafile' in dfPlotterConfig.columns:
+            for override in dfPlotterConfig['Datafile'].dropna().unique():
+                if (isinstance(override, str) and override.strip()
+                        and override not in datafilenames):
+                    datafilenames.append(override)
 
         self.datafiles = {}
         self.dateCreated = str(datetime.date.today())
@@ -1104,12 +1341,17 @@ class DashLinePlot():
         success = True
         for datafilename in datafilenames:
 
-            # Resolve a relative name against datadir, but keep the name from
-            # the config as the dictionary key: prepareGraphs looks the frame
-            # up by exactly the string the config carries.
-            datapath = datafilename
-            if datadir is not None and not os.path.isabs(datafilename):
-                datapath = os.path.join(datadir, datafilename)
+            # A reference may carry a '#group' fragment naming one rate group
+            # inside a multi-rate JSON file. Resolve the file part against
+            # datadir, but keep the whole reference, fragment included, as the
+            # dictionary key: prepareGraphs looks the frame up by exactly the
+            # string the config carries, and two groups of one file are two
+            # separate frames.
+            filepart, group = splitDataRef(datafilename)
+
+            datapath = filepart
+            if datadir is not None and not os.path.isabs(filepart):
+                datapath = os.path.join(datadir, filepart)
 
             if os.path.isfile(datapath):
 
@@ -1146,14 +1388,10 @@ class DashLinePlot():
                 elif 'xls' in extension:
                     self.datafiles[datafilename] = pd.read_excel(datapath, index_col=None)
 
-                # JSON record-array files: a list of flat objects, each object
-                # one sample carrying its own time column. from_records rather
-                # than read_json, because it preserves column order and does
-                # not try to parse a column named 't' as a date.
+                # JSON files: either one record array, or an object of named
+                # groups for multi-rate data. See readJsonData.
                 elif 'json' in extension:
-                    with open(datapath, 'r', encoding='utf-8') as fjson:
-                        records = json.load(fjson)
-                    self.datafiles[datafilename] = pd.DataFrame.from_records(records)
+                    self.datafiles[datafilename] = readJsonData(datapath, group)
 
                 #  csv files
                 #  top line is column names
@@ -1346,21 +1584,35 @@ class DashLinePlot():
 
                 msg = 'none selected'
 
+                # Box Select reports a 'range'; Lasso Select reports the
+                # polygon it drew as 'lassoPoints' and no 'range' at all.
+                # Handling only the first made the lasso, which sits next to
+                # the box tool in the toolbar, appear silently broken. For a
+                # lasso, report the bounding box of the polygon.
+                bounds = None
                 if selectedData is not None and 'range' in selectedData:
-
                     # for divs where we work with subplots, the number of the subplot is added to the
                     # x and y key. Get the keys programmatically.
                     rangeDict = selectedData['range']
-                    keys = []
-                    for key in rangeDict:
-                        keys.append(key)
+                    keys = list(rangeDict)
+                    bounds = (rangeDict[keys[0]], rangeDict[keys[1]])
+                elif selectedData is not None and 'lassoPoints' in selectedData:
+                    lassoDict = selectedData['lassoPoints']
+                    keys = list(lassoDict)
+                    xs, ys = lassoDict[keys[0]], lassoDict[keys[1]]
+                    if xs and ys:
+                        bounds = ([min(xs), max(xs)], [min(ys), max(ys)])
 
-                    x1eft = rangeDict[keys[0]][0]
-                    xright = rangeDict[keys[0]][1]
+                if bounds is not None:
+
+                    xRange, yRange = bounds
+
+                    x1eft = xRange[0]
+                    xright = xRange[1]
                     dx = abs(xright - x1eft)
 
-                    ytop = rangeDict[keys[1]][1]
-                    ybottom = rangeDict[keys[1]][0]
+                    ytop = yRange[1]
+                    ybottom = yRange[0]
                     dy = abs(ybottom - ytop)
                     
                     msg = (

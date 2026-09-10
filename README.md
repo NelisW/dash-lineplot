@@ -42,6 +42,12 @@ the following data file types:
     * csv files with column names in top row
     * first sheet of an xlsx file with column names in top row
     * json files holding a record array: a list of flat objects, one per sample
+    * json files holding named groups, one per sample rate, selected as file.json#group
+
+Text-valued columns are treated as enumerations: they are drawn as steps
+with the state names on the y axis. Every graph on a page shares the hover
+readout, so one pointer position reads the whole page. See
+[docs/userguide.md](docs/userguide.md).
 
 It the then proceeds to create and serve a Dash portal. 
 The page served has several elements, all constructed from the 

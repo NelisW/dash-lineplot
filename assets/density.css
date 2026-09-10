@@ -1,0 +1,67 @@
+/*
+ * Page density.
+ *
+ * The base stylesheet (bWLwgP.css) is a wide-margin marketing layout: its
+ * headings are 4.5rem and 3.6rem with matching margins, which is generous
+ * for prose and wasteful for a wall of graphs. These rules tighten the
+ * vertical rhythm without touching the base file.
+ *
+ * The class is set on the outermost page div from the Density header
+ * variable: density-compact (the default) or density-comfortable.
+ */
+
+/* ---------- compact ---------- */
+
+.density-compact h1 { font-size: 2.6rem; margin-top: 0.6rem; margin-bottom: 0.6rem; }
+.density-compact h2 { font-size: 2.2rem; margin-top: 0.5rem; margin-bottom: 0.5rem; }
+.density-compact h3 { font-size: 1.9rem; margin-top: 0.4rem; margin-bottom: 0.4rem; }
+.density-compact h4,
+.density-compact h5,
+.density-compact h6 { font-size: 1.6rem; margin-top: 0.4rem; margin-bottom: 0.4rem; }
+
+.density-compact p { margin-bottom: 0.5rem; }
+
+/* Markdown blocks above and below each graph. */
+.density-compact .dash-markdown,
+.density-compact div[id^="topMarkdown-"],
+.density-compact div[id^="botMarkdown-"],
+.density-compact div[id^="headerMarkdown-"],
+.density-compact div[id^="footerMarkdown-"] {
+    margin-top: 0.2rem;
+    margin-bottom: 0.2rem;
+}
+
+/* The click and selection feedback boxes: smaller type, tighter box, and
+   no large gap between the graph and its readouts. */
+.density-compact pre[id^="click-"],
+.density-compact pre[id^="select-"] {
+    font-size: 1.05rem;
+    line-height: 1.25;
+    margin-top: 0.1rem;
+    margin-bottom: 0.4rem;
+    padding: 0.3rem 0.5rem;
+}
+
+.density-compact .row { margin-bottom: 0.3rem; }
+
+/* Separate one graph from the next with a thin rule rather than blank space. */
+.density-compact .graph-separator {
+    border: 0;
+    border-top: 1px solid #e1e1e1;
+    margin: 0.4rem 0 0.5rem 0;
+}
+
+/* The tab strip itself. */
+.density-compact .tab { padding: 0.4rem 1rem !important; }
+
+/* ---------- comfortable ---------- */
+
+/* The original spacing, kept so a config can ask for it explicitly. Only
+   the graph separator is new; everything else falls through to the base
+   stylesheet untouched. */
+
+.density-comfortable .graph-separator {
+    border: 0;
+    border-top: 1px solid #e1e1e1;
+    margin: 1.5rem 0;
+}

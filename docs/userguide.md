@@ -156,15 +156,15 @@ The type is chosen from the file extension.
 |---|---|
 | `.csv` and most others | Column names on the top line, one sample per line. |
 | `.xlsx` | First sheet only, column names in the top row. |
-| `.json` | A record array: a list of flat objects, one object per sample. |
+| `.json` | A record array, or an object of named groups. See below. |
 | `.mat` | Matlab file with data in `DATA`, column names in `NAM` and the time base in `TIME`. |
 
-Whatever the format, the result is one table per file, and the
+The result is one table per file, or per group within a file, and the
 configuration refers to columns of that table by name.
 
 ### JSON record arrays
 
-A JSON data file holds a list of objects. Each object is one sample, and
+The single-rate form is a list of objects. Each object is one sample, and
 each of its keys becomes a column:
 
 ```json
@@ -178,16 +178,83 @@ Keys absent from a given object become empty cells in that row. The time
 column has no privileged name; it is chosen in the configuration through
 `xValue`, exactly like any other column.
 
-### One file, one time base
+### Multi-rate JSON
 
-Each data file keeps its own time column, and files are never merged onto a
-shared time base or resampled against one another. This matters when
-plotting data produced by processes that sample at different rates: a signal
-recorded every 1 ms and one recorded every 20 ms are drawn at their true
-densities, twenty to one, and neither is interpolated to match the other.
-A zero-order hold belongs to the process that causes it, not to the plotting
-layer, so the display never invents samples that the recording did not
-contain.
+Data recorded at several rates goes in one file as an object of named
+groups, each group holding its own record array with its own time column:
+
+```json
+{
+  "gimbal_1ms": [
+    { "t": 0.000, "theta_g": -0.0000 },
+    { "t": 0.001, "theta_g": -0.0200 }
+  ],
+  "seeker_10ms": [
+    { "t": 0.000, "eps_y": 0.0000, "mode": "Cueing" },
+    { "t": 0.010, "eps_y": 0.0010, "mode": "Cueing" }
+  ]
+}
+```
+
+`data/example-multirate.json` holds exactly this, as a working example.
+
+Which of the two shapes a file uses is declared by its own structure, not
+guessed from the contents: a top-level list is one record array, a
+top-level object is a set of named groups. Nothing else changes. Existing
+single-rate files continue to mean what they have always meant, and rates
+are never inferred from timestamps.
+
+A group is selected by appending a `#` fragment to the `Datafile` value:
+
+```text
+data/example-multirate.json#gimbal_1ms
+```
+
+Naming a group that does not exist, or omitting the fragment for a file
+that has groups, is reported with the list of groups the file does contain.
+
+Data recorded at different rates in **separate** files needs no fragment.
+One file is one table, as before.
+
+### Enumerations
+
+A column whose values are text, such as a mode or state name, is an
+enumeration. It is plotted rather than skipped: the labels are mapped onto
+integer codes, and the y axis is relabelled with the names, so the axis
+reads `Cueing` and `Tracking` rather than 0 and 1. The hover readout shows
+the name too. Any number of states is supported.
+
+Enumeration lines are drawn as steps, because a state signal is piecewise
+constant: it holds a value and then jumps. A sloped line between two states
+would draw intermediate states that never existed.
+
+By default the states are numbered in order of first appearance in the
+data, so a mode sequence reads up the axis in the order it happened. To fix
+the axis across runs, including states a particular run never reached,
+declare the order with the `Categories` attribute on the `yValue` row:
+
+```json
+{ "Variable": "yValue", "Value": "mode",
+  "Categories": ["Cueing", "Tracking", "Terminal"] }
+```
+
+In a spreadsheet cell, write the same list comma-separated:
+`Cueing, Tracking, Terminal`. A value that occurs in the data but is
+missing from the declared list is appended to the end of the axis rather
+than dropped, so an unexpected state is never hidden.
+
+`Scale` and `Offset` are ignored for an enumeration; they have no meaning
+for a state name.
+
+### One table, one time base
+
+Each table keeps its own time column, and tables are never merged onto a
+shared time base or resampled against one another. This holds between files
+and between groups within a file. A signal recorded every 1 ms and one
+recorded every 20 ms are drawn at their true densities, twenty to one, and
+neither is interpolated to match the other. A zero-order hold belongs to
+the process that causes it, not to the plotting layer, so the display never
+invents samples that the recording did not contain.
 
 ## Configuration files
 
@@ -211,8 +278,8 @@ words.
 A configuration has a header and any number of graph sheets:
 
 - The **header** carries page-level settings: the page title, the markdown
-  blocks at the top and bottom of every page, and an optional master data
-  file name.
+  blocks at the top and bottom of every page, an optional master data file
+  name, and the page density.
 - Each **graph sheet** becomes one tab. Its name supplies the tab label,
   with the leading `graph-` removed. A sheet whose name does not contain
   `graph` is ignored, which is how the `documentation` sheet in the shipped
@@ -272,6 +339,46 @@ Any number of graphs may appear on one tab. A `Title` entry opens a new
 graph, and the `yLabel` and `yValue` entries that follow it belong to that
 graph until the next `Title`.
 
+### Header variables
+
+| Variable | Meaning |
+|---|---|
+| `Pagetitle` | Browser tab title. |
+| `PageTop`, `PageBottom` | Markdown rendered at the top and bottom of every page. |
+| `Datafile` | Master data file. A graph sheet selects it with the keyword `master`. |
+| `Density` | `compact` or `comfortable`. Defaults to `compact`. |
+
+`Density` controls how tightly the page is packed. `compact` reduces
+heading sizes, shrinks the gaps around the graphs and their readout boxes,
+and separates graphs with a thin rule instead of blank space. `comfortable`
+restores the roomier original spacing. On a four-graph page the compact
+layout is about a third shorter.
+
+### Mixing sample rates on one tab
+
+The `Datafile` on a graph sheet sets the default for that tab. A single
+`yValue` row may override it, in the `Datafile` **column**, which is what
+lets one tab carry signals recorded at different rates:
+
+```json
+[
+  { "Variable": "Datafile", "Value": "run.json#gimbal_1ms" },
+  { "Variable": "xValue", "Value": "t" },
+  { "Variable": "Title", "Value": "Gimbal pitch" },
+  { "Variable": "yLabel", "Value": "theta_g [rad]" },
+  { "Variable": "yValue", "Value": "theta_g" },
+  { "Variable": "Title", "Value": "Seeker error" },
+  { "Variable": "yLabel", "Value": "eps_y [rad]" },
+  { "Variable": "yValue", "Value": "eps_y",
+    "Datafile": "run.json#seeker_10ms" }
+]
+```
+
+Each trace resolves its x and y against its own table, using the time
+column named by the sheet's `xValue`. The tables are not aligned, padded or
+resampled against one another; each line is simply drawn at the rate it was
+recorded.
+
 ### Line attributes
 
 These are set in additional columns on a `yValue` row, or on the `xLabel`
@@ -289,6 +396,8 @@ and `yLabel` rows in the case of `Format`.
 | `Scale` | Multiplier applied to the values before plotting. Defaults to 1. |
 | `Offset` | Value added before plotting. Defaults to 0. |
 | `Format` | Number format for the hover text, such as `.4f`. Set on the `xLabel` and `yLabel` rows, and applies to the whole graph. |
+| `Categories` | Ordered state names for an enumeration column. A comma-separated list in a spreadsheet cell, a JSON list in a JSON config. Defaults to order of first appearance. |
+| `Datafile` | Data file for this line only, overriding the sheet's. This is how one tab carries several sample rates. |
 
 When a workbook renders incorrectly, the first thing to check is stray
 content in cells below the intended range. Clearing the contents of every
@@ -337,10 +446,17 @@ carrying a large data set takes a moment.
 Moving the pointer across a graph displays the values of every line in that
 graph at the hovered x position, each in its line colour, together with the
 x value. The numbers are formatted according to the `Format` attribute set
-on the `xLabel` and `yLabel` rows.
+on the `xLabel` and `yLabel` rows. An enumeration shows its state name.
 
-Hover readout is shared by the lines within one graph. It is not shared
-across separate graphs.
+**The readout is shared by every graph on the page.** Hovering any one
+graph makes all the others display their own values at the same x position
+at the same time, so a whole page of signals can be read at one instant
+without clicking anything.
+
+Each graph resolves that x position against its own samples. Graphs
+recorded at different rates therefore show their own nearest sample rather
+than an interpolated one, and a graph whose x range does not cover the
+hovered position simply shows nothing.
 
 ### Zoom, pan and the Plotly toolbar
 
@@ -374,15 +490,31 @@ Range [x, y]: [0.259000, 30.391278]
 Each further click replaces the older of the two recorded points, so
 successive clicks always measure between the two most recent.
 
-**Rectangle Tool Selection Data.** Select Box Select in the toolbar, then
-drag a rectangle across the graph. The box reports the corners of the
-selection and its extent in x and y.
+**Rectangle Tool Selection Data.** This box reports the extent of a
+selection made with either of the two Plotly selection tools. Both are
+supported: Box Select reports the rectangle drawn, and Lasso Select reports
+the bounding box of the polygon drawn.
 
-Box selection acts on data points, so it needs markers: a graph whose lines
-are drawn in the default `lines` mode has no points to select and the box
-continues to read `none selected`. Set `Mode` to `markers+lines` on the
-lines being measured. For a large data set, also set `MarkerOpacity` to 0,
-which keeps the selection working without drawing thousands of markers.
+It is easy to conclude that the tool is broken, because two conditions must
+both hold before anything appears. Step by step:
+
+1. The graph must have **markers**. Selection acts on data points, and a
+   line drawn in the default `lines` mode has no points to select. Set
+   `Mode` to `markers+lines` on the lines being measured. Without markers
+   the box does not even appear on the page.
+1. Set `MarkerOpacity` to 0 at the same time, unless the markers are wanted
+   visually. Selection then works with nothing drawn. This is what the
+   shipped configuration does, which is why its graphs look like plain
+   lines yet are selectable.
+1. Hover the graph so the Plotly toolbar appears at its top right, and
+   click **Box Select** or **Lasso Select**. Until a selection tool is
+   chosen, dragging pans or zooms instead of selecting.
+1. Drag across the region of interest. The box then reports the top-left
+   and bottom-right corners and the extent in x and y.
+
+If the box still reads `none selected`, the selection enclosed no data
+points. Selecting an empty region of the plot area is the usual cause.
+
 Markers slow rendering noticeably on large data sets, which is why they are
 not the default.
 
@@ -403,9 +535,13 @@ fault.
 - **Subplots.** `UseSubplots` grouped the graph sets of one sheet into a
   single Plotly figure with shared axes. The path is disabled and the
   script reports `Subplots functionality disabled` on start-up.
-- **Hover synchronised across subplots.** This depended on the subplot
-  path and on the `visdcc` package, which is no longer maintained and has
-  been removed. Hover remains shared between the lines within one graph.
+- **Hover synchronised through subplots.** The original mechanism grouped
+  a sheet's graph sets into one Plotly figure and relied on the `visdcc`
+  package to inject the linking JavaScript. Both are gone. Synchronised
+  hover itself is not: it now covers every graph on the page rather than
+  only the subplots of one figure, and is implemented in
+  `assets/hoversync.js`, which Dash serves automatically and which needs no
+  package at all.
 - **The packaged executable and its Windows launcher.** `dash-lineplot.exe`,
   `startPlotTool.bat` and the PyInstaller configuration package a Qt
   desktop application that no longer exists. Start the script directly.
