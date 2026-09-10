@@ -3,7 +3,8 @@
     "Pagetitle": "Dash CSV File Viewer",
     "PageTop": "The PageTop field is rendered as a Markdown block at the top of the page.  \nThis viewer plots column data in CSV files as (t,y) or (x,y) line graphs.",
     "PageBottom": "The PageBottom field is rendered as a Markdown block at the bottom of the page.  \n\nMarkdown and HTML tables do not seem to work. See [here](https://community.plot.ly/t/tables-in-markdown/15823/3).  Maybe soon.  \nIn the meantime use [Plotly tables](https://plot.ly/python/table/), but this would require working at the code level, not just in this config file.\n",
-    "Datafile": "none"
+    "Datafile": "none",
+    "Density": "compact"
   },
   "sheets": {
     "graph-RelativePosition": [
@@ -433,6 +434,10 @@
       {
         "Variable": "UseSubplots",
         "Value": false
+      },
+      {
+        "Variable": "commonX",
+        "Value": true
       }
     ],
     "graph-gimbalFromxls": [
@@ -536,6 +541,10 @@
       {
         "Variable": "UseSubplots",
         "Value": false
+      },
+      {
+        "Variable": "commonX",
+        "Value": true
       }
     ]
   }

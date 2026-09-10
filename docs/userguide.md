@@ -273,6 +273,17 @@ The JSON schema mirrors the workbook one for one and uses the workbook's
 own column names verbatim, so the two describe the same plot in the same
 words.
 
+The shipped `dash-config.xlsx` and `dash-config.json` are the same
+configuration in both formats, kept in step by the converter, and both work
+against the bundled `data/` folder. The workbook's `documentation` sheet
+lists every variable and its default beside the settings themselves. Its
+`gimbalFromxls` tab has `commonX` set, so it also serves as a working
+example of two linked graphs.
+
+Note that `Include` is `False` on several tabs of the shipped
+configuration, so they do not appear in the browser until it is set to
+`True`. A setting on an excluded tab has no effect on the page.
+
 ### Structure
 
 A configuration has a header and any number of graph sheets:
@@ -394,6 +405,12 @@ state name.
 Without `commonX`, each graph zooms independently and its Click Data box
 reports only clicks on that graph, in the two-point form described under
 measurements below.
+
+`commonX` links the graphs of one tab. Graphs on different tabs are never
+linked, since only one tab is on screen at a time. Two worked examples
+ship with the tool: the `gimbalFromxls` tab of `dash-config.xlsx`, and
+`commonx-example.json`, which puts the same three graphs on a linked tab
+and an unlinked tab for comparison.
 
 ### Mixing sample rates on one tab
 
