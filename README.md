@@ -33,6 +33,14 @@ python tools/xlsx_config_to_json.py dash-config.xlsx
 repository, so it cannot be run as shipped. `dash-config.xlsx` and its
 converted `dash-config.json` both work against the bundled `data/` folder.
 
+`commonx-example.json` demonstrates `commonX`, which ties every graph on a
+tab to one x scale. Its first tab is linked and its second holds the same
+three graphs unlinked, for comparison:
+
+```bash
+python dash-lineplot.py --configfile commonx-example.json
+```
+
 ## What it does
 
 This script reads a config file, in Excel or JSON form, and one or more of
