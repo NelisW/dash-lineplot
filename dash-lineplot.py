@@ -208,9 +208,73 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 ################################################################
+# Columns a graph sheet may carry. Any sheet is reindexed onto these so that
+# a column nobody used still exists as NaN: the graph code indexes them by
+# name unconditionally, and a JSON config naturally omits what it does not
+# set. Extra columns beyond this list are preserved.
+CONFIG_COLUMNS = ['Variable', 'Value', 'Format', 'LineLabel', 'GraphType',
+                  'Scale', 'Offset', 'Colour', 'Linewidth', 'Dash', 'Mode',
+                  'MarkerOpacity']
+
+################################################################
+def isJsonConfig(configfile):
+    """
+    True if this configuration file is JSON rather than an Excel workbook.
+
+    Args:
+        | configfile (string): configuration filename.
+
+    Returns:
+        | (bolean): True for a .json configuration.
+
+    """
+    return os.path.splitext(configfile)[1].lower() == '.json'
+
+################################################################
+def readConfigTables(configfile):
+    """
+    Read a configuration from .xlsx or .json into a common table form.
+
+    The JSON schema mirrors the workbook one for one: a 'header' object of
+    Variable/Value pairs, and a 'sheets' object mapping each graph sheet
+    name to the list of row objects that sheet held. Field names are the
+    workbook's column names verbatim, so a workbook and its converted JSON
+    describe the same plot in the same words.
+
+    Args:
+        | configfile (string): configuration filename, .xlsx or .json.
+
+    Returns:
+        | dfHeader (DataFrame): the header table, columns Variable and Value.
+        | sheets (dict): sheet name to DataFrame, in file order.
+
+    """
+    def onCanonicalColumns(df):
+        extras = [c for c in df.columns if c not in CONFIG_COLUMNS]
+        return df.reindex(columns=CONFIG_COLUMNS + extras)
+
+    if isJsonConfig(configfile):
+        with open(configfile, 'r', encoding='utf-8') as fjson:
+            cfg = json.load(fjson)
+        dfHeader = pd.DataFrame([{'Variable': k, 'Value': v}
+                                 for k, v in cfg['header'].items()])
+        sheets = {name: onCanonicalColumns(pd.DataFrame(rows))
+                  for name, rows in cfg['sheets'].items() if 'graph' in name}
+        return dfHeader, sheets
+
+    cxls = pd.ExcelFile(configfile)
+    dfHeader = pd.read_excel(cxls, 'header')
+    # openpyxl rather than pd.ExcelFile.sheet_names, to keep the workbook's
+    # own sheet order
+    cwb = oxl.load_workbook(configfile)
+    sheets = {sn: onCanonicalColumns(pd.read_excel(cxls, sn))
+              for sn in cwb.sheetnames if 'graph' in sn}
+    return dfHeader, sheets
+
+################################################################
 def readPageTitle(configfile):
     """
-    Read the page title from the configuration file's header sheet.
+    Read the page title from the configuration file's header.
 
     Used as the browser tab title. Before the Qt shell was removed this was
     the native window's title.
@@ -223,7 +287,8 @@ def readPageTitle(configfile):
 
     """
     default = 'Dash flask server for plotting'
-    dfHeader = pd.read_excel(pd.ExcelFile(configfile), 'header').set_index('Variable')
+    dfHeader, _ = readConfigTables(configfile)
+    dfHeader = dfHeader.set_index('Variable')
     if 'Pagetitle' in dfHeader.index:
         return str(dfHeader.loc['Pagetitle', 'Value'])
     return default
@@ -873,35 +938,30 @@ class DashLinePlot():
     ##########################################
     def loadConfig(self, configfile):
         """
-        Loads the graph configuration from the excel file
-            
+        Loads the graph configuration from an .xlsx or .json file
+
         Args:
-            | configfile (string): Excel filename for file that defines the plots. 
+            | configfile (string): filename of the file that defines the plots.
 
         Returns:
             | None.
 
         """
 
-        # read the config file
-        cxls = pd.ExcelFile(configfile)
+        # read the config file, whichever of the two formats it is in
+        dfHeader, sheets = readConfigTables(configfile)
 
-        # header dataframe, i.e the data on the 'header' tab in the xlsx file 
+        # header dataframe, i.e the data on the 'header' tab in the xlsx file
         global dfPlotterHeader
-        dfPlotterHeader = pd.read_excel(cxls, 'header')
-        dfPlotterHeader = dfPlotterHeader.set_index('Variable')
+        dfPlotterHeader = dfHeader.set_index('Variable')
         masterDataFile =  dfPlotterHeader.loc['Datafile','Value']
-
-        # get a list of graph sheetnames (ignore the header sheet)
-        cwb =  oxl.load_workbook(configfile)
-        sheetnames = [sn for sn in cwb.sheetnames if 'graph' in sn]
 
         # dataframe to contain ALL the sheets' info
         global dfPlotterConfig
         dfPlotterConfig = pd.DataFrame()
 
-        for shtnum,sheetname in enumerate(sheetnames):
-            dft = pd.read_excel(cxls, sheetname)
+        for shtnum,(sheetname,dft) in enumerate(sheets.items()):
+            dft = dft.copy()
             # add info to identify the lines associated with this sheet
             dft['Graph'] = sheetname
             dft['ShtNum'] = shtnum
