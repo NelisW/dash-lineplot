@@ -63,36 +63,19 @@ https://dash.plot.ly/getting-started-part-2
 https://plot.ly/python/range-slider/
 https://plot.ly/python/click-events/
 
-This script requires openpyxl, PySide2 (PyQt5 is loaded if PySide2 not available), numpy, 
-pandas, plotly, dash, threading, openpyxl and some system modules.
+This script requires dash, plotly, pandas, numpy, openpyxl, scipy and some
+system modules. Create the environment from the environment.yml shipped
+beside this script, which solves on both Linux and Windows:
 
-To install dash when connected to the internet:
-conda config --add channels conda-forge
-conda search dash-daq --channel conda-forge
-conda install dash
-conda install dash-html-components
-conda install dash-core-components
-conda install dash-table
-conda install dash-daq
+    conda env create -f environment.yml
+    conda activate dashplot
 
-This package could not be installed with 
-    conda install visdcc
-Conflicts between versions. Installing from the bz2 file worked however.
+The plots are served to the system browser. There is no desktop-window
+build: the PySide2/PyQt5 shell that used to wrap the Flask server was
+removed, because PySide2 has no support beyond Python 3.10 and the window
+added nothing the browser does not do.
 
-A recent off-line install required the following packages to be manually installed.
-conda install dash-0.39.0-py_0.tar.bz2
-conda install flask-compress-1.4.0-py_0.tar.bz2
-conda install plotly-4.1.1-py_0.tar.bz2
-conda install dash-html-components-0.14.0-py_0.tar.bz2
-conda install dash-core-components-0.44.0-py_0.tar.bz2
-conda install dash-table-3.6.0-py_0.tar.bz2
-conda install dash-daq-0.1.4-py_0.tar.bz2
-conda install plotly-orca-1.2.1-1.tar.bz2
-conda install retrying-1.3.3-py37_1.tar.bz2
-conda install dash-renderer-0.20.0-py_0.tar.bz2
-conda install visdcc-0.0.40-pyh516909a_0.tar.bz2
-
-Plotly packages seem to be here:  
+Plotly packages seem to be here:
 https://anaconda.org/plotly  
 https://anaconda.org/plotly/repo  
 There are 17 packages, located under the package name, Files tab:
@@ -190,35 +173,19 @@ __version__= '$Revision: 4633 $'
 __author__='CJ & MS Willers'
 
 import sys, os
+import json
 import threading
 import pandas as pd
 import openpyxl as oxl
 import numpy as np
-import datetime   
-import itertools 
+import datetime
+import itertools
 
-# PySide2 is preferred based on licensing restrictions of PyQt5
-try:
-    __import__('PySide2')
-    from PySide2 import QtWidgets
-    import PySide2.QtCore as QtCore
-    from PySide2 import QtWebEngineWidgets
-except ImportError:
-    try:
-        __import__("PyQt5")
-        from PyQt5 import QtWidgets
-        import PyQt5.QtCore as QtCore
-        from PyQt5 import QtWebEngineWidgets
-    except ImportError:
-        print("This script requires Python 3 with either PySide2 or PyQt5")
-        exit(-1)
-            
 import dash
 from dash import dcc
 from dash import html
 from dash.dependencies import Input, Output, State
 from plotly import subplots
-import visdcc
 
 external_stylesheets = ['assets/bWLwgP.css']
 
@@ -239,6 +206,27 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
 
     return os.path.join(base_path, relative_path)
+
+################################################################
+def readPageTitle(configfile):
+    """
+    Read the page title from the configuration file's header sheet.
+
+    Used as the browser tab title. Before the Qt shell was removed this was
+    the native window's title.
+
+    Args:
+        | configfile (string): configuration filename.
+
+    Returns:
+        | pagetitle (string): the configured title, or a default.
+
+    """
+    default = 'Dash flask server for plotting'
+    dfHeader = pd.read_excel(pd.ExcelFile(configfile), 'header').set_index('Variable')
+    if 'Pagetitle' in dfHeader.index:
+        return str(dfHeader.loc['Pagetitle', 'Value'])
+    return default
 
 ################################################################
 class DashLinePlot():
@@ -401,13 +389,16 @@ class DashLinePlot():
             hfmt_x = dft[dft['Variable']=='xLabel']['Format'].values[0]
 
         # 3) apply the required scale and offset    
-        if not np.isnan(dft[(dft['Variable']=='xValue')]['Scale'][0]):
-            xscale = float(dft[(dft['Variable']=='xValue')]['Scale'][0])
+        # pandas 3 no longer falls back to positional lookup for Series[0]:
+        # the filtered frame keeps its original labels, so take .values[0],
+        # the idiom already used for Format above.
+        if not np.isnan(dft[(dft['Variable']=='xValue')]['Scale'].values[0]):
+            xscale = float(dft[(dft['Variable']=='xValue')]['Scale'].values[0])
         else:
             xscale = 1.0
-            
-        if not np.isnan(dft[(dft['Variable']=='xValue')]['Offset'][0]):
-            xoffset = float(dft[(dft['Variable']=='xValue')]['Offset'][0])
+
+        if not np.isnan(dft[(dft['Variable']=='xValue')]['Offset'].values[0]):
+            xoffset = float(dft[(dft['Variable']=='xValue')]['Offset'].values[0])
         else:
             xoffset = 0.
 
@@ -686,10 +677,9 @@ class DashLinePlot():
                     [
                         dcc.Graph
                         (
-                            id=graph, 
+                            id=graph,
                             figure=figdict,
                         ),
-                        visdcc.Run_js(id='hover-js')  # need this to get the hover data on all lines of all subplots simultaneously
                     ]
                 )
             )
@@ -996,7 +986,7 @@ class DashLinePlot():
         # load the data if matlab or space separated
 
         if matlab or '.plt' in filename:
-            df = pd.read_csv(filename, sep='\s+',engine='python',header=0,skiprows=skiprows)
+            df = pd.read_csv(filename, sep=r'\s+',engine='python',header=0,skiprows=skiprows)
             
             # the leading '% ' in header messes up the column headings, fix:
             if matlabspace:
@@ -1021,7 +1011,7 @@ class DashLinePlot():
 
         # load spectral data
         if '.scd' in filename or '.spc' in filename:
-            dfData = pd.read_csv(filename, delimiter='\s+',header=None)
+            dfData = pd.read_csv(filename, delimiter=r'\s+',header=None)
             if dfData.shape[1] == 3:
                 dfData.columns=['wavelen','wavenum','trans']
             else:
@@ -1030,18 +1020,19 @@ class DashLinePlot():
         return dfData
 
     ##########################################
-    def loadData(self):
+    def loadData(self, datadir=None):
         """
         Load all the data from all files supplied
 
         Args:
-            | None. 
+            | datadir (string): directory to resolve relative data file names
+                             against, or None to use the working directory.
 
         Returns:
             | success (bolean): True if the file load was successful.
-            
+
         """
-    
+
         # get data filenames from all sheets
         datafilenames = dfPlotterConfig[(dfPlotterConfig['Variable']=='Datafile')]['Value'].unique()
 
@@ -1053,10 +1044,17 @@ class DashLinePlot():
         success = True
         for datafilename in datafilenames:
 
-            if os.path.isfile(datafilename):
+            # Resolve a relative name against datadir, but keep the name from
+            # the config as the dictionary key: prepareGraphs looks the frame
+            # up by exactly the string the config carries.
+            datapath = datafilename
+            if datadir is not None and not os.path.isabs(datafilename):
+                datapath = os.path.join(datadir, datafilename)
+
+            if os.path.isfile(datapath):
 
                 # determine what type of file is this by looking at the file extension
-                extension = os.path.splitext(datafilename)[1]
+                extension = os.path.splitext(datapath)[1]
 
                 # matlab format files
                 # note that here we rely on the Denel GTV matlab file which has 
@@ -1070,13 +1068,13 @@ class DashLinePlot():
                     # scipy reads in structures as structured numpy arrays of dtype object
                     # returns a dictionary with variable names as keys, and loaded matrices as values.
                     from scipy.io import loadmat
-                    dataMat = loadmat(datafilename)
+                    dataMat = loadmat(datapath)
 
                     # create the dataframe
                     self.datafiles[datafilename] = pd.DataFrame(dataMat['DATA'], columns=dataMat['NAM'])
 
                     # set beginning of data set as time zero
-                    self.datafiles[datafilename]['TIME'] = self.datafiles[datafilename]['TIME'] - self.datafiles[datafilename]['TIME'][0]
+                    self.datafiles[datafilename]['TIME'] = self.datafiles[datafilename]['TIME'] - self.datafiles[datafilename]['TIME'].values[0]
                     
                     # get date 
                     self.dateCreated = dataMat['Date_Created'][0]
@@ -1086,33 +1084,43 @@ class DashLinePlot():
                 # Only the first sheet is loaded
                 # To be generalised to specify the sheet from the config file
                 elif 'xls' in extension:
-                    self.datafiles[datafilename] = pd.read_excel(datafilename, index_col=None)
+                    self.datafiles[datafilename] = pd.read_excel(datapath, index_col=None)
+
+                # JSON record-array files: a list of flat objects, each object
+                # one sample carrying its own time column. from_records rather
+                # than read_json, because it preserves column order and does
+                # not try to parse a column named 't' as a date.
+                elif 'json' in extension:
+                    with open(datapath, 'r', encoding='utf-8') as fjson:
+                        records = json.load(fjson)
+                    self.datafiles[datafilename] = pd.DataFrame.from_records(records)
 
                 #  csv files
                 #  top line is column names
                 else:
-                    self.datafiles[datafilename] = self.readdatafile(datafilename)
-                    # pd.read_csv(datafilename, sep="\s+|,|;", index_col=None,engine='python')
-    
+                    self.datafiles[datafilename] = self.readdatafile(datapath)
+                    # pd.read_csv(datapath, sep="\s+|,|;", index_col=None,engine='python')
+
             else:
-                print(f'Data file {datafilename} for plotting not found, please provide a valid file name in the config file!\n ')
+                print(f'Data file {datapath} for plotting not found, please provide a valid file name in the config file!\n ')
                 success = False
 
         return success
 
     ##########################################
     #
-    def run_dash(self, pageLayout,port):
+    def run_dash(self, pageLayout, port, pagetitle=None):
         """
         Initiate the Dash server and serve the page
 
         Args:
             | pageLayout (dash layout): info the be served in Plotly data format
             | port (int): port number to be used
+            | pagetitle (string): browser tab title, or None for the Dash default
 
         Returns:
             | None.
-            
+
         """
         # start a dash app, which also starts a Flask server
         # it is important to set the name parameter of the Dash instance to the value __name__, 
@@ -1120,7 +1128,9 @@ class DashLinePlot():
         # directory for this Dash app
         # this must be global to stay in scope in applications that use the plotter as a module
         global dashApp
-        dashApp = dash.Dash(__name__, external_stylesheets=external_stylesheets, assets_folder=resource_path('assets'))
+        dashApp = dash.Dash(__name__, external_stylesheets=external_stylesheets,
+                            assets_folder=resource_path('assets'),
+                            title=pagetitle if pagetitle else 'Dash')
 
         # override security restrictions: allow the serving of local pages
         dashApp.css.config.serve_locally = True
@@ -1139,7 +1149,7 @@ class DashLinePlot():
         # dev_tools features are activated by default when you run the app with app.run_server(debug=True)
         # By default, Dash includes "hot-reloading". This means that Dash will automatically refresh your browser 
         # when you make a change in your Python or CSS code.
-        dashApp.run_server(debug=False, port=port, use_reloader=False)
+        dashApp.run(debug=False, port=port, use_reloader=False)
 
     def setupCallbacks(self):
         """
@@ -1356,15 +1366,19 @@ class DashLinePlot():
                 return limit, '', ''
 
     ##########################################
-    def runPlotter(self, port, configfile, cback = True, flaskServerRunning=False):
+    def runPlotter(self, port, configfile, cback = True, flaskServerRunning=False,
+                   datadir=None, pagetitle=None):
         """
         main control plotter function
 
         Args:
-            | configfile (string): Excel configuration file defining the graphs.
+            | configfile (string): configuration file defining the graphs.
             | cback (bolean): use callbacks to populate the data on the tabs (default True)
                              (recommended for large data sets)
             | flaskServerRunning (bolean): entry state of the flask server (default False)
+            | datadir (string): directory to resolve relative data file names against,
+                             or None to resolve them against the working directory
+            | pagetitle (string): browser tab title, or None for the Dash default
 
         Returns:
             | flaskServerRunning (bolean): running state of flask server at the end of this function.
@@ -1373,14 +1387,12 @@ class DashLinePlot():
         # set callbacks flag as requested
         self.useCallbacks = cback
 
-        sys.argv.append("--disable-web-security")
-
         self.loadConfig(configfile)
 
-        # load all data to be available in the class 
+        # load all data to be available in the class
         # all the data files, but only once into a dict with filename as key
-        
-        if self.loadData():           
+
+        if self.loadData(datadir):
             # prepare all required graph sets
             self.prepareGraphs()
 
@@ -1400,8 +1412,9 @@ class DashLinePlot():
             # setup file, open a new dash window, then only render the page with the updated information 
             # as implemented in the else section here.
             if not flaskServerRunning:
-                sys.argv.append("--disable-web-security")
-                threading.Thread(target=self.run_dash, args=(pageLayout,port), daemon=True).start()
+                threading.Thread(target=self.run_dash,
+                                 args=(pageLayout, port, pagetitle),
+                                 daemon=True).start()
                 flaskServerRunning = True
             else:
                 # serve new page
@@ -1410,128 +1423,43 @@ class DashLinePlot():
         return flaskServerRunning       
     
 ##########################################
-#
-class WebViewer(QtWebEngineWidgets.QWebEngineView):
-    """
-    creates a web engine view widget
-
-    """
-    def __init__(self, parent, url):
-        """
-        Initialise the web browser widget
-
-        Args:
-            | parent (GUI element): the parent GUI element where this widget is included.
-            | url (url):the url to be browsed
-
-        Returns:
-            | None.
-
-        """
-        super().__init__(parent)
-
-        # ensure the complete view has the same style
-        # if this is not present, the tabs as well as top and bottom markdown
-        # have different style - only experienced when used as module 
-        self.setStyleSheet(external_stylesheets[0])
-
-        # create the page
-        page = QtWebEngineWidgets.QWebEnginePage(self)
-        self.setPage(page)
-        self.setUrl(QtCore.QUrl(url))
-
-##########################################
-# 
-class DashPlotWindow(QtWidgets.QMainWindow, QtWidgets.QWidget):    
-    """
-    creates a window to run the dash server in
-    """                     
-
-    def __init__(self, port, title):
-        """
-        Initialise the window
-
-        Args:
-            | port (int): the port to be used by the server.
-            | title (string): window title
-
-        Returns:
-            | None.
-
-        """
-        super().__init__()
-        self.setWindowTitle(title)
-        self.setMinimumSize(640,640)
-        
-        # browser widget
-        browserWidget = WebViewer(self,f'http://127.0.0.1:{port}')
-        browserWidget.setSizePolicy(QtWidgets.QSizePolicy.Maximum, QtWidgets.QSizePolicy.Maximum)
-        
-        # set browser as central widget
-        self.setCentralWidget(browserWidget)
-    
-    def closeEvent(self, event):
-        """
-        captures the window close event [to be used later if required]
-        """
-        pass
-        # print('The dash window received a close event')
-
-##########################################
 # when run on the commandline this code will be executed
 #
 if __name__ == "__main__":
-       
-    try:
-        from docopt import docopt
-    except ImportError:
-        print('Install docopt using Anaconda:')
-        print('    conda install -c anaconda docopt')
-        print('or if not using Anaconda: ')
-        print('    pip install docopt')
-        print('or simply put the docopt.py script in the working folder')
-        sys.exit(0)
 
-    options = """dash-lineplot.py: Plotly dash line plotting utility.
+    import argparse
 
-        Usage:
-          dash-lineplot.py [--configfile=<configFilename>] 
-          dash-lineplot.py -h | --help 
- 
-        Options:
-          -h, --help                           Show this screen.
-          -f <configFilename>, --configfile <configFilename>    Excel config filename [default: ./dash-config.xlsx].
- 
-    """
-    # process commandline arguments
-    optionArguments = docopt(options)
+    parser = argparse.ArgumentParser(
+        description='dash-lineplot: Plotly Dash line plotting utility.')
+    parser.add_argument('-f', '--configfile', default='./dash-config.xlsx',
+                        help='Plot configuration file (default: ./dash-config.xlsx).')
+    parser.add_argument('-p', '--port', type=int, default=8050,
+                        help='Port for the local Flask server (default: 8050).')
+    parser.add_argument('-d', '--datadir', default=None,
+                        help='Directory holding the data files named in the '
+                             'configuration. Relative data file names are '
+                             'resolved against it.')
+    args = parser.parse_args()
 
-    # always use callbacks
-    # required for the slider, click data and rectangle tool to work
-    useCallbacks = True
-    # Excel file that defines the plots
-    configfile = optionArguments["--configfile"]
+    pagetitle = readPageTitle(args.configfile)
 
-    # extract the page title from the config file
-    # read the config file
-    cxls = pd.ExcelFile(configfile)
-    dfPlotterHeader = pd.read_excel(cxls, 'header')
-    dfPlotterHeader = dfPlotterHeader.set_index('Variable')
-    pagetitle = dfPlotterHeader.loc['Pagetitle','Value'] if 'Pagetitle' in dfPlotterHeader.index else 'Dash flask server for plotting'
-
-    # port used for the local Flask server
-    port = '8050' 
-           
-    # start main app 
-    appMain = QtWidgets.QApplication(sys.argv)
-       
-    # create new window and activate
-    main_widget = DashPlotWindow(port,pagetitle)
-    main_widget.show()
-
-    # serve the required data to this window
+    # always use callbacks: required for the slider, click data and the
+    # rectangle tool to work
     dashlineplotter = DashLinePlot()
-    dashlineplotter.runPlotter(port, configfile, useCallbacks)
-    
-    # exit when main window closes
-    sys.exit(appMain.exec_())
+    serving = dashlineplotter.runPlotter(args.port, args.configfile, cback=True,
+                                         datadir=args.datadir, pagetitle=pagetitle)
+
+    # loadData returns False when a data file named in the config is missing,
+    # in which case no page was ever built and no server was started.
+    if not serving:
+        print('\nnothing served: a data file named in the configuration was '
+              'not found. Fix the Datafile entries, or pass --datadir.\n')
+        sys.exit(1)
+
+    # run_dash runs in a daemon thread, so the main thread has to stay alive
+    # for the server to keep serving.
+    print(f'\nserving on http://127.0.0.1:{args.port}/   (Ctrl+C to stop)\n')
+    try:
+        threading.Event().wait()
+    except KeyboardInterrupt:
+        print('\nstopped')
