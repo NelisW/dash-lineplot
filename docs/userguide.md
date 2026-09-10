@@ -402,8 +402,35 @@ nearest sample to a given x differs from graph to graph, and inventing a
 value between two samples would be a fiction. An enumeration reports its
 state name.
 
-Without `commonX`, each graph zooms independently and its Click Data box
-reports only clicks on that graph, in the two-point form described under
+**A rubber-band selection reads the whole tab too.** Selecting a region on
+any graph, with either the box or the lasso tool, fills the Rectangle Tool
+Selection Data box of every graph on the tab.
+
+Only the x window travels between graphs. The graphs of a tab have their
+own y scales and often their own units, so a y range selected on one of
+them means nothing on another. Each graph therefore reports the extent of
+its own data inside the shared x window, which is the quantity actually
+worth knowing: what this signal did while that one did that.
+
+```text
+Selected x: [2.000000, 5.000000]
+Width    x: 3.000000
+  SLR pitch: y in [-0.023895, 0.023257]  (601 samples)
+  SLR yaw: y in [-0.023712, 0.023847]  (601 samples)
+```
+
+An enumeration lists the states it visited inside the window rather than a
+minimum and maximum, which would be meaningless for a state name:
+
+```text
+  mode: playback, dynamic  (3 samples)
+```
+
+A graph with no samples in the window says so rather than reporting an
+empty range.
+
+Without `commonX`, each graph zooms independently, and its two readout
+boxes report only what happened on that graph, in the forms described under
 measurements below.
 
 `commonX` links the graphs of one tab. Graphs on different tabs are never
@@ -589,6 +616,10 @@ both hold before anything appears. Step by step:
 
 If the box still reads `none selected`, the selection enclosed no data
 points. Selecting an empty region of the plot area is the usual cause.
+
+On a tab with `commonX` this box behaves differently: a selection on any
+graph fills every box on the tab, reporting the shared x window and each
+graph's own y extent within it. See the `commonX` section above.
 
 Markers slow rendering noticeably on large data sets, which is why they are
 not the default.

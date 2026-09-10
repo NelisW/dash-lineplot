@@ -292,6 +292,48 @@ def readJsonData(path, group):
         f'groups, but holds {type(content).__name__}.')
 
 ################################################################
+def selectionBounds(selectedData):
+    """
+    The x and y extent of a Plotly selection, whichever tool made it.
+
+    Box Select reports a 'range'; Lasso Select reports the polygon it drew
+    as 'lassoPoints' and no 'range' at all, so handling only the first makes
+    the lasso appear silently broken. A lasso is reduced to the bounding box
+    of its polygon.
+
+    Args:
+        | selectedData (dict): the selectedData property of a Graph.
+
+    Returns:
+        | bounds (tuple): (xRange, yRange), each a two-element list, or None
+          if nothing was selected.
+
+    """
+    if not selectedData:
+        return None
+
+    if 'range' in selectedData:
+        # for divs where we work with subplots, the number of the subplot is
+        # added to the x and y key, so take the keys programmatically
+        ranges = selectedData['range']
+        keys = list(ranges)
+        if len(keys) < 2:
+            return None
+        return ranges[keys[0]], ranges[keys[1]]
+
+    if 'lassoPoints' in selectedData:
+        lasso = selectedData['lassoPoints']
+        keys = list(lasso)
+        if len(keys) < 2:
+            return None
+        xs, ys = lasso[keys[0]], lasso[keys[1]]
+        if not xs or not ys:
+            return None
+        return [min(xs), max(xs)], [min(ys), max(ys)]
+
+    return None
+
+################################################################
 def nearestSample(xs, x):
     """
     Index of the sample nearest x, or None for an empty series.
@@ -525,6 +567,57 @@ class DashLinePlot():
                 value = list(ys)[index]
                 shown = 'n/a' if value is None else f'{float(value):.6f}'
             lines.append(f'  {name} = {shown}')
+
+        return '\n'.join(lines)
+
+    ##########################################
+    def commonSelectMessage(self, grID, xRange):
+        """
+        Selection readout for one graph of a commonX group.
+
+        Only the x window is shared. The graphs of a group have their own y
+        scales, and often their own units, so a y range selected on one of
+        them means nothing on another. Each graph therefore reports the
+        extent of its own data inside the shared x window, which is the
+        useful quantity: what this signal did while that one did that.
+
+        Args:
+            | grID (string): the graph this readout belongs to.
+            | xRange (list): [x0, x1] of the selection, on any graph of the group.
+
+        Returns:
+            | msg (string): the text for this graph's selection box.
+
+        """
+        x0, x1 = min(xRange), max(xRange)
+        lines = [f'Selected x: [{x0:.6f}, {x1:.6f}]',
+                 f'Width    x: {abs(x1 - x0):.6f}']
+
+        for name, xs, ys, texts in self.graphTraces.get(grID, []):
+            values = np.asarray(xs, dtype=float)
+            inWindow = (values >= x0) & (values <= x1)
+            count = int(inWindow.sum())
+            if count == 0:
+                lines.append(f'  {name}: no samples in range')
+                continue
+
+            if texts is not None:
+                # an enumeration has no meaningful minimum: report the states
+                # it actually visited inside the window, in order of occurrence
+                seen = []
+                for keep, label in zip(inWindow, texts):
+                    if keep and str(label) not in seen:
+                        seen.append(str(label))
+                lines.append(f'  {name}: {", ".join(seen)}  ({count} samples)')
+                continue
+
+            yValues = np.asarray([np.nan if v is None else v for v in ys],
+                                 dtype=float)[inWindow]
+            if np.all(np.isnan(yValues)):
+                lines.append(f'  {name}: no values in range')
+                continue
+            lines.append(f'  {name}: y in [{np.nanmin(yValues):.6f}, '
+                         f'{np.nanmax(yValues):.6f}]  ({count} samples)')
 
         return '\n'.join(lines)
 
@@ -1728,6 +1821,32 @@ class DashLinePlot():
 
                   return msg 
 
+            # As with the click readout, a commonX tab fans the selection out:
+            # a rubber-band on any graph fills every selection box on the tab.
+            # Only the x window travels. The graphs have their own y scales and
+            # often their own units, so a y range selected on one means nothing
+            # on another; each graph reports its own y extent inside that x
+            # window instead.
+            if theGraph in self.commonXGroups:
+
+                @dashApp.callback(
+                    Output('select-'+theGraph, 'children'),
+                    [Input(sibling, 'selectedData')
+                     for sibling in self.commonXGroups[theGraph]],
+                    [State(theGraph, 'id')]
+                )
+                def display_common_selected_data(*args):
+                    targetId = args[-1]
+                    fired = dash.callback_context.triggered
+                    if not fired:
+                        return 'none selected'
+                    bounds = selectionBounds(fired[0]['value'])
+                    if bounds is None:
+                        return 'none selected'
+                    return self.commonSelectMessage(targetId, bounds[0])
+
+                continue
+
             @dashApp.callback(
                 Output('select-'+theGraph, 'children'), # display box id and children
                 [Input(theGraph, 'selectedData')]   # graph id and selectedData
@@ -1736,24 +1855,7 @@ class DashLinePlot():
 
                 msg = 'none selected'
 
-                # Box Select reports a 'range'; Lasso Select reports the
-                # polygon it drew as 'lassoPoints' and no 'range' at all.
-                # Handling only the first made the lasso, which sits next to
-                # the box tool in the toolbar, appear silently broken. For a
-                # lasso, report the bounding box of the polygon.
-                bounds = None
-                if selectedData is not None and 'range' in selectedData:
-                    # for divs where we work with subplots, the number of the subplot is added to the
-                    # x and y key. Get the keys programmatically.
-                    rangeDict = selectedData['range']
-                    keys = list(rangeDict)
-                    bounds = (rangeDict[keys[0]], rangeDict[keys[1]])
-                elif selectedData is not None and 'lassoPoints' in selectedData:
-                    lassoDict = selectedData['lassoPoints']
-                    keys = list(lassoDict)
-                    xs, ys = lassoDict[keys[0]], lassoDict[keys[1]]
-                    if xs and ys:
-                        bounds = ([min(xs), max(xs)], [min(ys), max(ys)])
+                bounds = selectionBounds(selectedData)
 
                 if bounds is not None:
 

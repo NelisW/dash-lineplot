@@ -434,10 +434,6 @@
       {
         "Variable": "UseSubplots",
         "Value": false
-      },
-      {
-        "Variable": "commonX",
-        "Value": true
       }
     ],
     "graph-gimbalFromxls": [
