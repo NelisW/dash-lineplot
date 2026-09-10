@@ -292,6 +292,28 @@ def readJsonData(path, group):
         f'groups, but holds {type(content).__name__}.')
 
 ################################################################
+def nearestSample(xs, x):
+    """
+    Index of the sample nearest x, or None for an empty series.
+
+    Used to read a graph at an x that was clicked on a different graph. The
+    nearest recorded sample is reported rather than an interpolated value,
+    because graphs sharing an x axis need not share a sample rate.
+
+    Args:
+        | xs (Series or list): the x values of one trace.
+        | x (float): the x value to look up.
+
+    Returns:
+        | index (int): index of the nearest sample, or None.
+
+    """
+    values = np.asarray(xs, dtype=float)
+    if values.size == 0:
+        return None
+    return int(np.abs(values - x).argmin())
+
+################################################################
 def isEnumSeries(series):
     """
     True if this column holds enumeration labels rather than numbers.
@@ -452,6 +474,60 @@ class DashLinePlot():
         # storage for last 2 clicked point all graphs
         self.clickedData = {}
 
+        # traces per graph id, so a click on one graph of a commonX group can
+        # report the values of every graph in that group at the clicked x
+        self.graphTraces = {}
+
+        # graph id to the list of graph ids sharing its x axis, for tabs that
+        # set commonX. Graphs on other tabs do not appear here at all.
+        self.commonXGroups = {}
+
+        # last two clicked x values per graph, for the commonX readout
+        self.clickedX = {}
+
+    ##########################################
+    def commonClickMessage(self, grID, xClicked):
+        """
+        Readout for one graph of a commonX group, at the clicked x.
+
+        Every graph of the group reports at the same x, whichever graph was
+        actually clicked, so one click reads the whole tab. The value quoted
+        for each line is its nearest recorded sample, never an interpolation:
+        graphs in a group may sample at different rates, and inventing a
+        value between two samples would be a fiction.
+
+        Args:
+            | grID (string): the graph this readout belongs to.
+            | xClicked (float): x value of the click, on any graph of the group.
+
+        Returns:
+            | msg (string): the text for this graph's Click Data box.
+
+        """
+        history = self.clickedX.setdefault(grID, [])
+        history.append(xClicked)
+        del history[:-2]
+
+        lines = []
+        if len(history) == 2:
+            lines.append(f'Previous x: {history[0]:.6f}')
+        lines.append(f'Current  x: {xClicked:.6f}')
+        if len(history) == 2:
+            lines.append(f'Range    x: {abs(history[1] - history[0]):.6f}')
+
+        for name, xs, ys, texts in self.graphTraces.get(grID, []):
+            index = nearestSample(xs, xClicked)
+            if index is None:
+                continue
+            if texts is not None and index < len(texts):
+                shown = str(texts[index])
+            else:
+                value = list(ys)[index]
+                shown = 'n/a' if value is None else f'{float(value):.6f}'
+            lines.append(f'  {name} = {shown}')
+
+        return '\n'.join(lines)
+
     ##########################################
     def generateFeedbackBoxes(self, id, isMarkers):
         """
@@ -570,6 +646,14 @@ class DashLinePlot():
         if 'ToDisk' in dft.index:
             if not np.isnan(dft[(dft['Variable']=='ToDisk')]['Value'].values[0]):
                 toDisk = dft[(dft['Variable']=='ToDisk')]['Value'].values[0]
+
+        # commonX ties every graph on this tab to one x scale: zooming or
+        # panning any of them applies the same range to all, and a click on
+        # any of them reports the values of all at that x.
+        commonX = False
+        if 'commonX' in dft.index:
+            requested = dft[(dft['Variable']=='commonX')]['Value'].values[0]
+            commonX = bool(requested) and str(requested).strip().lower() not in ('false', '0', 'nan', '')
 
         # list of all graph names created here [passed back to calling function]
         # these names are the id of a Graph Div on the page, used in callback functions to update the figure
@@ -919,13 +1003,18 @@ class DashLinePlot():
                 # of data between two bands of white, so the compact layout
                 # claims that space back: just enough for the title and the
                 # axis labels.
+                # The title is drawn inside the plotting area rather than in a
+                # band above it: 'paper' places it against the top of the axes,
+                # so it costs no page height at all.
                 if pageDensity == 'compact':
                     figdict['layout']['margin'] = {'l': 60, 'r': 20,
-                                                   't': 34, 'b': 38}
+                                                   't': 8, 'b': 38}
                     figdict['layout']['title'] = {'text': grTitle,
                                                   'font': {'size': 13},
+                                                  'xref': 'paper', 'yref': 'paper',
                                                   'x': 0.01, 'xanchor': 'left',
-                                                  'y': 0.98, 'yanchor': 'top'}
+                                                  'y': 1.0, 'yanchor': 'top',
+                                                  'pad': {'t': 4, 'l': 4}}
            
                 #  store the id of this set - to be used in callback function generation
                 #  we mark all relevant Divs with this string
@@ -947,8 +1036,19 @@ class DashLinePlot():
                 except (TypeError, ValueError):
                     pass
 
+                # the common-x class is what assets/graphsync.js keys on to
+                # decide which graphs share an x range
+                rowClass = 'row graph-row common-x' if commonX else 'row graph-row'
+
+                # keep the traces so a click on any graph of a commonX group
+                # can report every graph's values at that x
+                self.graphTraces[grID] = [
+                    (trace.get('name', ''), trace['x'], trace['y'],
+                     trace.get('text'))
+                    for trace in thisGraphData]
+
                 thisDivList.append(
-                    html.Div(className='row graph-row', children=[
+                    html.Div(className=rowClass, children=[
                         html.Div(className='nine columns', children=[
                             dcc.Graph
                             (
@@ -1013,6 +1113,11 @@ class DashLinePlot():
                     style = {'text-align':'right'}
                     )
         )
+
+        # every graph of a commonX tab knows the whole group it belongs to
+        if commonX:
+            for grID in grList:
+                self.commonXGroups[grID] = list(grList)
 
         return thisDivList, grList, xData.min(), xData.max()
 
@@ -1559,46 +1664,69 @@ class DashLinePlot():
             data = [1, [0,0], [0,0], [0,0]]
             self.clickedData[theGraph] = data
 
-            @dashApp.callback(
-                Output('click-'+theGraph, 'children'), # display box id and children
-                [Input(theGraph, 'clickData')],   # graph id and clickdata
-                [State(theGraph,'id')]
-            )
-            def display_click_data(clickData, id):
-                msg = 'none clicked'
-                if clickData:
-                    # get clicked data
-                    x = clickData['points'][0]['x']
-                    y = clickData['points'][0]['y']
+            # On a commonX tab every graph's readout listens to every graph in
+            # the group, so one click fills them all at the same x. The State
+            # carries the id of the graph this particular box belongs to,
+            # which is also what keeps the loop variable out of the closure.
+            if theGraph in self.commonXGroups:
 
-                    # Index of new click data
-                    index = self.clickedData[id][0]
+                @dashApp.callback(
+                    Output('click-'+theGraph, 'children'),
+                    [Input(sibling, 'clickData')
+                     for sibling in self.commonXGroups[theGraph]],
+                    [State(theGraph, 'id')]
+                )
+                def display_common_click_data(*args):
+                    targetId = args[-1]
+                    fired = dash.callback_context.triggered
+                    if not fired or not fired[0]['value']:
+                        return 'none clicked'
+                    clicked = fired[0]['value']
+                    return self.commonClickMessage(
+                        targetId, clicked['points'][0]['x'])
 
-                    # store the new data here
-                    self.clickedData[id][index][0] = x
-                    self.clickedData[id][index][1] = y
+            else:
 
-                    # Calc the delta and set the index to be valid for next click
+                @dashApp.callback(
+                  Output('click-'+theGraph, 'children'), # display box id and children
+                  [Input(theGraph, 'clickData')],   # graph id and clickdata
+                  [State(theGraph,'id')]
+                )
+                def display_click_data(clickData, id):
+                  msg = 'none clicked'
+                  if clickData:
+                      # get clicked data
+                      x = clickData['points'][0]['x']
+                      y = clickData['points'][0]['y']
+
+                      # Index of new click data
+                      index = self.clickedData[id][0]
+
+                      # store the new data here
+                      self.clickedData[id][index][0] = x
+                      self.clickedData[id][index][1] = y
+
+                      # Calc the delta and set the index to be valid for next click
                     
-                    indCur = index
-                    if index == 1:
-                        index = 2
-                    else:
-                        index = 1
-                    indexPrev = index
-                    self.clickedData[id][0] = index
+                      indCur = index
+                      if index == 1:
+                          index = 2
+                      else:
+                          index = 1
+                      indexPrev = index
+                      self.clickedData[id][0] = index
 
-                    # calc delta
-                    self.clickedData[id][3][0] = abs(self.clickedData[id][indCur][0] - self.clickedData[id][indexPrev][0])
-                    self.clickedData[id][3][1] = abs(self.clickedData[id][indCur][1] - self.clickedData[id][indexPrev][1])
+                      # calc delta
+                      self.clickedData[id][3][0] = abs(self.clickedData[id][indCur][0] - self.clickedData[id][indexPrev][0])
+                      self.clickedData[id][3][1] = abs(self.clickedData[id][indCur][1] - self.clickedData[id][indexPrev][1])
 
-                    msg =  (
-                            f'Previous [x, y]: [{self.clickedData[id][indexPrev][0]:.6f}, {self.clickedData[id][indexPrev][1]:.6f}]\n'  
-                            f'Current [x, y]: [{self.clickedData[id][indCur][0]:.6f}, {self.clickedData[id][indCur][1]:.6f}]\n'  
-                            f'Range [x, y]: [{self.clickedData[id][3][0]:.6f}, {self.clickedData[id][3][1]:.6f}]' 
-                    )
+                      msg =  (
+                              f'Previous [x, y]: [{self.clickedData[id][indexPrev][0]:.6f}, {self.clickedData[id][indexPrev][1]:.6f}]\n'  
+                              f'Current [x, y]: [{self.clickedData[id][indCur][0]:.6f}, {self.clickedData[id][indCur][1]:.6f}]\n'  
+                              f'Range [x, y]: [{self.clickedData[id][3][0]:.6f}, {self.clickedData[id][3][1]:.6f}]' 
+                      )
 
-                return msg 
+                  return msg 
 
             @dashApp.callback(
                 Output('select-'+theGraph, 'children'), # display box id and children

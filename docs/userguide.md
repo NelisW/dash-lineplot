@@ -332,6 +332,7 @@ four and the graph set entries are required; the rest take defaults.
 | `GraphBottom` | Markdown inserted immediately below the graph. |
 | `Include` | `True` or `False`. Whether this tab appears at all. Defaults to `True`. |
 | `ToDisk` | `True` or `False`. Whether to write a standalone HTML copy into `graphs/`. |
+| `commonX` | `True` or `False`. Tie every graph on this tab to one x scale. Defaults to `False`. |
 | `UseSubplots` | `True` or `False`. See the note on subplots under features not currently available. |
 | `xSliderStep` | Resolution of the x-axis slider. See the note on the slider under features not currently available. |
 
@@ -353,11 +354,46 @@ graph until the next `Title`.
 `compact` reduces the heading sizes, removes the vertical space between one
 graph row and the next entirely, and tightens the margins Plotly reserves
 around each plot so that the data area fills roughly 70 percent of the
-graph rather than 40. `comfortable` restores the roomier original spacing
-and leaves Plotly's default margins alone.
+graph rather than 40. The graph title is drawn inside the plotting area,
+against its top left corner, rather than in a band of page above the graph,
+so a title costs no page height at all. `comfortable` restores the roomier
+original spacing, leaves Plotly's default margins alone, and puts the title
+back above the plot.
 
 Measured on a seven-graph page with `Height` set to 240: 1940 px compact
 against 4286 px comfortable.
+
+### Tying the graphs of a tab to one x scale
+
+Set `commonX` to `True` on a graph sheet and every graph on that tab shares
+one x range. Two things follow.
+
+**Zoom and pan apply to all of them.** Drag-zooming, panning or autoscaling
+any graph applies the same x range to every other graph on the tab, so the
+whole tab always shows the same interval. If the x axis is time, the graphs
+stay aligned in time whatever the reader does to one of them.
+
+**A click reads the whole tab.** Clicking any graph fills the Click Data
+box of every graph on the tab at that same x, so one click reads all of
+them without hunting for the same instant on each. Each box quotes its own
+graph's traces:
+
+```text
+Previous x: 8.000000
+Current  x: 12.500000
+Range    x: 4.500000
+  eps_y = -0.000081
+```
+
+The value quoted is that graph's nearest recorded sample, never an
+interpolation. Graphs on one tab may sample at different rates, so the
+nearest sample to a given x differs from graph to graph, and inventing a
+value between two samples would be a fiction. An enumeration reports its
+state name.
+
+Without `commonX`, each graph zooms independently and its Click Data box
+reports only clicks on that graph, in the two-point form described under
+measurements below.
 
 ### Mixing sample rates on one tab
 
@@ -562,8 +598,8 @@ fault.
   package to inject the linking JavaScript. Both are gone. Synchronised
   hover itself is not: it now covers every graph on the page rather than
   only the subplots of one figure, and is implemented in
-  `assets/hoversync.js`, which Dash serves automatically and which needs no
-  package at all.
+  `assets/graphsync.js`, which Dash serves automatically and which needs no
+  package at all. The same file links the x axes of a `commonX` tab.
 - **The packaged executable and its Windows launcher.** `dash-lineplot.exe`,
   `startPlotTool.bat` and the PyInstaller configuration package a Qt
   desktop application that no longer exists. Start the script directly.
