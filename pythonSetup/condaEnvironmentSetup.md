@@ -1,43 +1,61 @@
-## conda dashplotenv environment
+## conda dashplot environment
 
-The dashenv conda environment is used for dash-plotly work.
+The `dashplot` conda environment is used for dash-plotly work. It is
+defined by `environment.yml` in the repository root, which pins version
+floors only and carries no `prefix`, so the same file solves on Linux and
+on Windows.
 
-This environment is set up as follows:
+Create and activate it:
 
-    conda create --name dashplotenv
-    conda activate dashplotenv
+    conda env create -f environment.yml
+    conda activate dashplot
 
-    conda config --add channels conda-forge
+Update it after `environment.yml` changes:
 
-    conda install numpy
-    conda install pandas
-    conda install openpyxl
+    conda env update -f environment.yml --prune
 
-    pip install PyQt5
-    pip install PyQtWebEngine
+Terminate with:
 
-    conda install dash
-    conda install dash-daq
-    conda install dash-table 
+    conda deactivate
 
-    pip install visdcc
+Remove it entirely:
 
-To use the environment
+    conda env remove --name dashplot
 
-    conda activate dashplotenv
+### What is in it, and what is not
 
-Terminate with
+The environment carries dash, plotly, pandas, numpy, openpyxl and scipy.
+`scipy` is present only for `scipy.io.loadmat`, used by the Matlab data
+reader, and is a lazy import that costs nothing until a `.mat` file is
+actually read.
 
-    conda deactivate 
+Three packages that earlier versions of this document installed are
+deliberately absent:
 
-### Using a yml export
+- **PyQt5 / PyQtWebEngine**, and their PySide2 alternative. These wrapped
+  the Flask server in a native desktop window. PySide2 has no support
+  beyond Python 3.10, and the window offered nothing a browser does not.
+  The page is now served to the system browser.
+- **visdcc**, which provided synchronised hover across subplots. It is
+  unmaintained, and its callback was already commented out in this script
+  as broken before the package was removed.
 
-https://shandou.medium.com/export-and-create-conda-environment-with-yml-5de619fe5a2
+### Exporting
 
-Export environment
+Prefer `--no-builds --from-history` when refreshing the file. A plain
+`conda env export` writes platform-specific build strings and an absolute
+`prefix` naming your own home directory, which is what made the previous
+`dashplotenv.yml` unusable anywhere but the machine that produced it:
 
-    conda env export > dashplotenv.yml
+    conda env export --no-builds --from-history -n dashplot
 
-Creating the environment with a yml file:
+### Verified solve
 
-    conda env create -f dashplotenv.yml
+On 2026-09-10, conda-forge solved `environment.yml` to Python 3.14.7,
+Dash 4.4.1, Plotly 7.0.0, pandas 3.0.5, numpy 2.5.3, openpyxl 3.1.5 and
+scipy 1.18.0.
+
+Two of those are breaking changes relative to the 2022 environment, and the
+script was updated for both: Dash 4 removed `run_server` in favour of
+`run`, and pandas 3 no longer falls back to positional lookup when a Series
+is indexed with an integer.

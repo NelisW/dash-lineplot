@@ -1,11 +1,48 @@
 # dash-lineplot
 
-This script reads an Excel config file and one or more of the following file types:
-    
+## Quick start
+
+```bash
+conda env create -f environment.yml
+conda activate dashplot
+python dash-lineplot.py --configfile dash-config.xlsx
+```
+
+Then open `http://127.0.0.1:8050/`. The page is served to the system
+browser; there is no desktop-window build. The options are `--configfile`,
+`--port` and `--datadir`.
+
+To plot a directory of JSON telemetry without writing a config by hand,
+generate one and point the server at the same directory:
+
+```bash
+python tools/config_from_run.py path/to/run-directory -o run.json
+python dash-lineplot.py --configfile run.json --datadir path/to/run-directory
+```
+
+Relative data file names in a config are resolved against `--datadir`, so a
+config never has to carry a path into somebody's data tree.
+
+To move an existing Excel config to the text format:
+
+```bash
+python tools/xlsx_config_to_json.py dash-config.xlsx
+```
+
+`exmple-dash-config.xlsx` references a test tree that is not part of this
+repository, so it cannot be run as shipped. `dash-config.xlsx` and its
+converted `dash-config.json` both work against the bundled `data/` folder.
+
+## What it does
+
+This script reads a config file, in Excel or JSON form, and one or more of
+the following data file types:
+
     * matlab file with data in 'DATA', variable names in 'NAM' and time base in 'TIME'
     * csv files with column names in top row
     * first sheet of an xlsx file with column names in top row
-    
+    * json files holding a record array: a list of flat objects, one per sample
+
 It the then proceeds to create and serve a Dash portal. 
 The page served has several elements, all constructed from the 
 information provided in the config file.
@@ -25,11 +62,13 @@ according to the Excel config file specifications.
 In the present script the default config filename is './dash-config.xlsx'.
 Any other filename can be provided on the commandline using the -f input flag.
 
-Dash starts a Flask server at the specified port, so the browser must be 
+Dash starts a Flask server at the specified port, so the browser must be
 pointing to the appropriate port number
 localhost:port
-This means that once the server is running, you can view the page with 
-the PySide browser as used here, or in an external browser.
+Once the server is running, view the page in any browser. The PySide2/PyQt5
+desktop window that used to wrap the server has been removed: PySide2 has no
+support beyond Python 3.10, and the window offered nothing the browser does
+not already do.
 
 This module requires the following data in the current directory:
 
