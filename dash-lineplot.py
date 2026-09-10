@@ -2,47 +2,59 @@
 # The contents of this file are subject to the licenses listed below.
 # You may not use this file except in compliance with these Licenses. 
 # 
-# Python, scipy, numpy, pandas, and other 'standard' modules are licensed 
-# under the Python License: https://docs.python.org/3.7/license.html.  
+# Python, scipy, numpy, pandas, openpyxl and other 'standard' modules are
+# licensed under the Python License: https://docs.python.org/3/license.html.
 #
-# PySide: 'Qt for Python' is licensed under the LGPL3 license:
-# https://www.gnu.org/licenses/lgpl-3.0.html
-# 
-# plotly/dash/visdcc is licensed under MIT https://community.plot.ly/t/pricing-and-license/9714
+# plotly/dash is licensed under MIT https://community.plot.ly/t/pricing-and-license/9714
 # https://en.wikipedia.org/wiki/MIT_License
+#
+# PySide/Qt and visdcc were used by earlier versions and are no longer
+# dependencies; their licence notices were removed with them.
 #
 ################################################################
 
 """
 
-This script reads an Excel config file and one or more of the following file types:
+This script reads a config file, in Excel or JSON form, and one or more of
+the following data file types:
     * matlab file with data in 'DATA', variable names in 'NAM' and time base in 'TIME'
     * csv files with column names in top row
     * first sheet of an xlsx file with column names in top row
-It the then proceeds to create and serve a Dash portal. 
-The page served has several elements, all constructed from the 
+    * json files holding either one record array, a list of flat objects with
+      one object per sample, or an object of named groups, one group per
+      sample rate, each selected as 'file.json#group'
+It the then proceeds to create and serve a Dash portal.
+The page served has several elements, all constructed from the
 information provided in the config file.
 
 The config file has any number of sheets where each sheet defines
-a different set of line graphs to be rendered on a separate tab 
+a different set of line graphs to be rendered on a separate tab
 (except for the header sheet, which defines the page header.)
 Each graph sheet defines the height of the graphs, axes labels,
 one x-value column name and any number of sets of y-value column names.
 Each line has a number of attributes with default values if not supplied.
 Each tab can be switched on/off for display purposes.
 Each graph set can be exported to an html file.
+A JSON config mirrors that structure one for one, using the same names.
 
-The data file is read and a set of Dash data structures are formed
-according to the Excel config file specifications.
+Nothing about the data is inferred. Column names, the time column and the
+groups of a multi-rate file are all named in the config, tables are never
+merged or resampled against one another, and a column whose values are text
+is plotted as an enumeration with its labels on the y axis. Graphs recorded
+at different rates therefore keep their own sample density.
+
+Every graph on a page shares the hover readout. A tab that sets commonX
+also shares one x range: zoom, pan, click and rubber-band selection on any
+of its graphs apply to all of them. See assets/graphsync.js.
 
 In the present script the default config filename is './dash-config.xlsx'.
 Any other filename can be provided on the commandline using the -f input flag.
 
-Dash starts a Flask server at the specified port, so the browser must be 
+Dash starts a Flask server at the specified port, so the browser must be
 pointing to the appropriate port number
 localhost:port
-This means that once the server is running, you can view the page with 
-the PySide browser as used here, or in an external browser.
+The page is served to the system browser; the PySide desktop window used by
+earlier versions has been removed.
 
 This module requires the following data in the current directory:
  * icons/logoSet2long.png
