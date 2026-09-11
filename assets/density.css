@@ -135,18 +135,3 @@
     font-size: 1.1rem;
     line-height: 1.2;
 }
-
-/* No spinner arrows on the range boxes: the values are typed, and the
-   arrows are both useless at these magnitudes and a waste of width. */
-
-.xrange-box input[type=number] {
-    -moz-appearance: textfield;
-    appearance: textfield;
-}
-
-.xrange-box input[type=number]::-webkit-outer-spin-button,
-.xrange-box input[type=number]::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    appearance: none;
-    margin: 0;
-}

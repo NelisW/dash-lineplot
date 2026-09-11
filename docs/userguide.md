@@ -614,6 +614,13 @@ Fill in either pair, or both, and press Apply. A pair left blank is left
 alone, so the y range can be set without disturbing the x range and the
 other way round. Reset returns both axes to the full data range.
 
+The fields are plain text boxes rather than spin boxes, so no browser draws
+increment arrows beside them: a step of one is either nothing or everything
+depending on the signal, and the arrows only ate width. Anything a number
+can be written as is accepted, including a decimal point, a leading minus
+and scientific notation such as `1.9e1`. Text that is not a number is
+ignored rather than reported as an error.
+
 This is what the range slider of earlier versions provided, plus the y axis
 it never had. The slider itself is gone, and with it the instruction to
 click the current tab before anything happened; typing a start and an end

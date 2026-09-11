@@ -780,17 +780,17 @@ class DashLinePlot():
         xrangeDiv = html.Div(
                         [
                             dcc.Markdown(""" **X range** """),
-                            dcc.Input(id='xstart-' + id, type='number',
+                            dcc.Input(id='xstart-' + id, type='text', inputMode='decimal',
                                       placeholder=bound(xmin),
                                       className='xrange-input'),
-                            dcc.Input(id='xend-' + id, type='number',
+                            dcc.Input(id='xend-' + id, type='text', inputMode='decimal',
                                       placeholder=bound(xmax),
                                       className='xrange-input'),
                             dcc.Markdown(""" **Y range** """),
-                            dcc.Input(id='ystart-' + id, type='number',
+                            dcc.Input(id='ystart-' + id, type='text', inputMode='decimal',
                                       placeholder=bound(ymin),
                                       className='xrange-input'),
-                            dcc.Input(id='yend-' + id, type='number',
+                            dcc.Input(id='yend-' + id, type='text', inputMode='decimal',
                                       placeholder=bound(ymax),
                                       className='xrange-input'),
                             html.Button('Apply', id='xapply-' + id,
@@ -1792,12 +1792,21 @@ class DashLinePlot():
                 xStart, xEnd = args[2 * count + which], args[3 * count + which]
                 yStart, yEnd = args[4 * count + which], args[5 * count + which]
 
+                # The boxes are plain text inputs, so that no browser draws
+                # spinner arrows on them. The values therefore arrive as
+                # strings, and anything that is not a number is ignored
+                # rather than raising.
+                def number(value):
+                    try:
+                        return float(str(value).strip())
+                    except (TypeError, ValueError):
+                        return None
+
                 def span(start, end):
-                    if start is None or end is None:
+                    low, high = number(start), number(end)
+                    if low is None or high is None or low >= high:
                         return None
-                    if float(start) >= float(end):
-                        return None
-                    return [float(start), float(end)]
+                    return [low, high]
 
                 changed = False
                 xSpan = span(xStart, xEnd)
