@@ -197,6 +197,7 @@ import itertools
 import dash
 from dash import dcc
 from dash import html
+from dash import Patch
 from dash.dependencies import Input, Output, State
 from plotly import subplots
 
@@ -302,6 +303,57 @@ def readJsonData(path, group):
     raise ValueError(
         f'{path} must hold either a list of samples or an object of named '
         f'groups, but holds {type(content).__name__}.')
+
+################################################################
+def resolveSetContexts(dft):
+    """
+    The settings in force for each graph on a sheet.
+
+    A sheet is read top to bottom as a sequence of blocks. A Height row opens
+    a block, and a Datafile, xValue or xLabel row applies to every graph below
+    it until another row of the same kind replaces it. Each Title captures
+    whatever is in force at that point, so one tab can carry several data
+    files, each with its own time column.
+
+    A sheet with one block behaves exactly as it did before blocks existed:
+    its single Datafile and xValue apply to every graph on it.
+
+    Args:
+        | dft (DataFrame): the rows of one graph sheet, in sheet order.
+
+    Returns:
+        | contexts (dict): set number as '000', '001', ... to a dict of
+          datafile, xvalue, xlabel, xformat, xscale, xoffset and height.
+
+    """
+    current = {'datafile': None, 'xvalue': None, 'xlabel': '', 'xformat': '.4f',
+               'xscale': 1.0, 'xoffset': 0.0, 'height': 300}
+    contexts = {}
+    setNumber = -1
+
+    for _, row in dft.iterrows():
+        variable = row['Variable']
+
+        if variable == 'Height':
+            current['height'] = row['Value']
+        elif variable == 'Datafile':
+            current['datafile'] = row['Value']
+        elif variable == 'xLabel':
+            current['xlabel'] = row['Value']
+            current['xformat'] = row['Format'] if isinstance(row['Format'], str) else '.4f'
+        elif variable == 'xValue':
+            current['xvalue'] = row['Value']
+            # Scale and Offset ride on the xValue row, so they belong to the
+            # block that row opened, not to the sheet
+            current['xscale'] = (float(row['Scale'])
+                                 if not np.isnan(row['Scale']) else 1.0)
+            current['xoffset'] = (float(row['Offset'])
+                                  if not np.isnan(row['Offset']) else 0.0)
+        elif variable == 'Title':
+            setNumber += 1
+            contexts[f'{setNumber:03d}'] = dict(current)
+
+    return contexts
 
 ################################################################
 def selectionBounds(selectedData):
@@ -634,17 +686,25 @@ class DashLinePlot():
         return '\n'.join(lines)
 
     ##########################################
-    def generateFeedbackBoxes(self, id, isMarkers):
+    def generateFeedbackBoxes(self, id, isMarkers, xmin=None, xmax=None):
         """
-        Builds the div with the click and rectangle tool feedback boxes
+        Builds the column beside a graph: x-range entry and the readout boxes
+
+        The x-range boxes replace the range slider of earlier versions, which
+        depended on the reader clicking the current tab to trigger a redraw
+        and stopped working when that mechanism changed. Typing a start and
+        an end is the capability the slider provided; the slider itself was
+        only ever the means.
 
         Args:
             | id (string): id string.
-
+            | isMarkers (bolean): whether any line carries markers, which is
+                             what makes a selection possible at all.
+            | xmin (double): smallest x in the data, shown as a placeholder.
+            | xmax (double): largest x in the data, shown as a placeholder.
 
         Returns:
             | thisDivList (list): list of html Divs.
-
 
         """
 
@@ -676,10 +736,33 @@ class DashLinePlot():
                             className='feedback-box'
                         )
 
+        # x-range entry: type a start and an end, Apply to zoom, Reset to go
+        # back to the full data range. On a commonX tab this drives every
+        # graph on the tab, not just this one.
+        def bound(value):
+            return '' if value is None else f'{float(value):.6g}'
+
+        xrangeDiv = html.Div(
+                        [
+                            dcc.Markdown(""" **X range** """),
+                            dcc.Input(id='xstart-' + id, type='number',
+                                      placeholder=bound(xmin),
+                                      className='xrange-input'),
+                            dcc.Input(id='xend-' + id, type='number',
+                                      placeholder=bound(xmax),
+                                      className='xrange-input'),
+                            html.Button('Apply', id='xapply-' + id,
+                                        className='xrange-button'),
+                            html.Button('Reset', id='xreset-' + id,
+                                        className='xrange-button'),
+                        ],
+                        className='feedback-box xrange-box'
+                    )
+
+        boxes = [xrangeDiv, clickDiv]
         if isMarkers:
-            return html.Div(className='feedback-column', children=[ clickDiv, rectangleDiv ])
-        else:
-            return html.Div(className='feedback-column', children=[ clickDiv ])
+            boxes.append(rectangleDiv)
+        return html.Div(className='feedback-column', children=boxes)
                 
 
     def graphToDisk(self, figdict, fbasename):
@@ -733,19 +816,6 @@ class DashLinePlot():
         if not os.path.exists(grDir):
             os.mkdir(grDir)
 
-        # get subplot bolean from the input
-        # handle all graphs separately (default) or as subplots
-        useSubplots = False
-        if 'UseSubplots' in dft.index:
-            if not np.isnan(dft[(dft['Variable']=='UseSubplots')]['Value'].values[0]):
-                useSubplots = dft[(dft['Variable']=='UseSubplots')]['Value'].values[0]
-
-        # It seems that with the latest python modules, the visdcc module is not compatibl any more
-        # We need to solve this issue
-        # For the time being the subplot functionality will be disabled
-        useSubplots = False  
-        print('\nSubplots functionality disabled\n')   
-
         # graphs to disk requested?
         toDisk = True
         if 'ToDisk' in dft.index:
@@ -767,61 +837,15 @@ class DashLinePlot():
         # list of all the line entries for this graph set
         #  before building the page, all lines are first created and stored here
         graphData = []
-     
-        # get the filename for this graph to get to the data in the dataframe
-        dfilename = dft[(dft['Variable']=='Datafile')]['Value'].values[0]
-        df = self.datafiles[dfilename]
 
-        # ------- x data preparation
+        # Settings in force for each graph, resolved by walking the sheet in
+        # order: a Height row opens a block, and a Datafile, xValue or xLabel
+        # row applies to every graph below it until the next one. A sheet with
+        # a single block behaves exactly as it always did.
+        setContexts = resolveSetContexts(dft)
 
-        # 1) get the name of the x parameter
-        xVarName = dft[dft['Variable']=='xValue']['Value'].values[0]
-
-        # check requested x-range input validity and slice as requested
-        if reqStart < df[xVarName].values[0]:
-            reqStart = df[xVarName].values[0]
-        if reqEnd > df[xVarName].values[-1]:
-            reqEnd = df[xVarName].values[-1]
-        if reqEnd <= reqStart:
-            reqEnd = df[xVarName].values[-1]
-        df = df[(df[xVarName] >= reqStart) & (df[xVarName] <= reqEnd)]
-
-        #  2) get the graph set x hover text format from config
-        hfmt_x = '.4f' 
-        if isinstance(dft[dft['Variable']=='xLabel']['Format'].values[0], str):
-            hfmt_x = dft[dft['Variable']=='xLabel']['Format'].values[0]
-
-        # 3) apply the required scale and offset    
-        # pandas 3 no longer falls back to positional lookup for Series[0]:
-        # the filtered frame keeps its original labels, so take .values[0],
-        # the idiom already used for Format above.
-        if not np.isnan(dft[(dft['Variable']=='xValue')]['Scale'].values[0]):
-            xscale = float(dft[(dft['Variable']=='xValue')]['Scale'].values[0])
-        else:
-            xscale = 1.0
-
-        if not np.isnan(dft[(dft['Variable']=='xValue')]['Offset'].values[0]):
-            xoffset = float(dft[(dft['Variable']=='xValue')]['Offset'].values[0])
-        else:
-            xoffset = 0.
-
-        xData = df[xVarName] * xscale + xoffset
-
-        # 4) slider marks dictionary based on set events in the data
-        xmin = xData.min()
-        xmax = xData.max()
-        xsteps = 11
-        sliderMarks={str(t): f'{t:.4f}s' for t in np.linspace(xmin,xmax,xsteps,endpoint=True)}
-
-        # 5) step size of the x-axis slider
-        xSliderStep = np.nan
-        if 'xSliderStep' in dft['Variable']:
-            xSliderStep =  dft[dft['Variable']=='xSliderStep']['Value'].values[0]           
-        if np.isnan(xSliderStep):
-            xSliderStep = round((xmax - xmin) / len(xData), 3)  
-
-        #  6) all graphs on one page or tab have the same x label 
-        xLabel = dft.loc['xLabel','Value']
+        # widest x range over every graph on the tab, for the x-range boxes
+        xmin, xmax = None, None
 
         # ------- y data preparation
 
@@ -871,16 +895,24 @@ class DashLinePlot():
             # axis can be relabelled with the names further down. Scale and
             # Offset are deliberately not applied to an enumeration: they have
             # no meaning for a state name.
-            # A trace may name its own data file in the Datafile column,
-            # overriding the sheet's. This is what lets one tab carry signals
-            # recorded at different rates: each trace resolves its x and y
-            # against its own frame, and nothing is aligned or resampled
-            # between them.
-            traceDf = df
-            traceX = xData
+            # Each trace resolves its x and y against the data file its own
+            # block named, and a Datafile cell on this very row overrides even
+            # that. Nothing is aligned or resampled between files: a tab may
+            # carry signals recorded at different rates, and each is drawn at
+            # the rate it was recorded.
+            setStr = str(index).split('#')[1].split('-')[0]
+            ctx = setContexts[setStr]
+
+            dataref = ctx['datafile']
             if isinstance(row['Datafile'], str) and row['Datafile'].strip():
-                traceDf = self.datafiles[row['Datafile'].strip()]
-                traceX = traceDf[xVarName] * xscale + xoffset
+                dataref = row['Datafile'].strip()
+
+            traceDf = self.datafiles[dataref]
+            traceX = traceDf[ctx['xvalue']] * ctx['xscale'] + ctx['xoffset']
+
+            xlo, xhi = traceX.min(), traceX.max()
+            xmin = xlo if xmin is None else min(xmin, xlo)
+            xmax = xhi if xmax is None else max(xmax, xhi)
 
             ySeries = traceDf[row['Value']]
             traceCategories = None
@@ -950,90 +982,22 @@ class DashLinePlot():
                 html.Div([dcc.Markdown(id=f'topMarkdown-{graph}',children=dft.loc['GraphTop','Value'])])
             )            
 
-        # 3) Div x-axis slider 
-        #    Disable for now
-        #    With updated python modules the "click tab again" functionaity does not work to trigger an update to the tab
-        #    This must be sorted out
-
-        # instruction = '**Click on current tab to refresh the x-axis slider and the graphs**'
-
-        # setName = graph
-        # thisDivList.append(
-        #     html.Div([
-        #         dcc.Markdown(id='header-xSlider-'+ setName,children=instruction),
-        #         dcc.RangeSlider(
-        #             id='xSlider-'+ setName, min=xData.min(), max=xData.max(),  step=xSliderStep, 
-        #             value=[xData.min(), xData.max()],  
-        #             marks=sliderMarks, 
-        #             allowCross=False,
-        #             tooltip={'always_visible': False, 'placement': 'bottom'},  # use either the tooltip or the text display in next div
-        #             # updatemode='drag',   # default is mouseup
-        #             className='margin150'
-        #         ),
-        #         html.Div(
-        #             style={'marginTop':40, 'fontSize':12},
-        #             id='output-container-xSlider-'+ setName,
-        #             className='margin150'
-        #         ),
-        #         dcc.Input(id='minVal-'+ setName, type='number', min=0, step=xSliderStep, placeholder='type start value', className='margin150-2', style={'fontSize':12}),
-        #         dcc.Input(id='maxVal-'+ setName, type='number', min=0, step=xSliderStep, placeholder='type end value', className='margin2', style={'fontSize':12}),
-        #         html.Button(id='submit-button-'+ setName, type='submit', children='Submit', className='margin2'),
-        #         html.Button('Reset slider', id='resetSlider-'+ setName, className='margin2'),
-        #     ])
-        # )
-
         # 4) Graph and data feedback Divs
 
         # title rows
         titleRows = dft[(dft['Variable']=='Title')]
 
-        #  graph titles
-        grTitles = [row['Value'] for index, row in titleRows.iterrows()]
-
-        # number of graph sets 
-        numGraphSets = len(titleRows.index)
-
-        # subplot environment setup to be done before running through the data collection
-        if useSubplots:
-
-            # for subplots we have only one Graph Div
-            # use the graph set name without any added numbers
-            grList.append(graph)
-
-            # row heights
-            grHeight = dft.loc['Height','Value']
-            rowHeights = [grHeight] * numGraphSets
-
-            # generate the subplot figure
-            figdict = subplots.make_subplots(rows=numGraphSets, cols=1,
-                                        shared_xaxes=True, shared_yaxes=False,
-                                        vertical_spacing=0.075,
-                                        row_heights=rowHeights,
-                                        x_title=xLabel, 
-                                        subplot_titles=grTitles
-                                        )
-            figdict.update_xaxes(hoverformat=hfmt_x, 
-                                gridcolor=gridColour   # default is white
-                                )  
-            figdict.update_layout(hovermode='x', 
-                                    plot_bgcolor=backgroundColor, 
-                                    font=dict(size=10))   # setting the font size of all y-axes labels and legends
-
-
-        # subplot counter used to pack the graph data to the figdict
-        subNum = 0
-
         #  collect the data for the graphs by running through each set
         for index, row in titleRows.iterrows():
-
-            # increase graph set counter, starting from one
-            subNum = subNum + 1
 
             # get the set number as a string
             setStr = str(index).split('#')[1]
 
+            # the settings this graph's block put in force
+            ctx = setContexts[setStr]
+
             #  current graph title and ylabel for the plot
-            grTitle = row['Value'] 
+            grTitle = row['Value']
             yLabel = dft.loc['yLabel#'+setStr,'Value']
 
             #  graph set y hover text format 
@@ -1059,17 +1023,9 @@ class DashLinePlot():
                 # identity the specific trace
                 if 'yValue#'+setStr in value:
 
-                    # add to plot set    
-                    if useSubplots:
-                        figdict.append_trace(graphData[traceNum], subNum, 1) 
-                        figdict.update_yaxes(
-                            hoverformat=hfmt_y, 
-                            title=yLabel, 
-                            gridcolor=gridColour,
-                            row = subNum, col = 1) 
-                    else:                 
-                        thisGraphData.append(graphData[traceNum])
-                        
+                    # add to plot set
+                    thisGraphData.append(graphData[traceNum])
+
                     # check for usage of markers
                     # at least one trace with markers will trigger the rectangle tool
                     # with associated Rectangle Tool Selection Data box
@@ -1081,120 +1037,93 @@ class DashLinePlot():
                         if category not in setCategories:
                             setCategories.append(category)
 
-            # Not using subplots we create a Graph Div for each set 
-            if not useSubplots:
 
-                # y axis: an enumeration set gets its codes relabelled with the
-                # state names, so the reader sees 'Tracking' and not 1
-                yAxisDict = {'title': yLabel, 'hoverformat': hfmt_y}
-                if setCategories:
-                    yAxisDict['tickmode'] = 'array'
-                    yAxisDict['tickvals'] = list(range(len(setCategories)))
-                    yAxisDict['ticktext'] = setCategories
-                    yAxisDict['range'] = [-0.5, len(setCategories) - 0.5]
+            # y axis: an enumeration set gets its codes relabelled with the
+            # state names, so the reader sees 'Tracking' and not 1
+            yAxisDict = {'title': yLabel, 'hoverformat': hfmt_y}
+            if setCategories:
+                yAxisDict['tickmode'] = 'array'
+                yAxisDict['tickvals'] = list(range(len(setCategories)))
+                yAxisDict['ticktext'] = setCategories
+                yAxisDict['range'] = [-0.5, len(setCategories) - 0.5]
 
-                # create dictionary with the layout and data
-                figdict = {'layout':{'title': grTitle,
-                                    'xaxis':{'title': xLabel, 'hoverformat': hfmt_x},
-                                    'yaxis':yAxisDict,
-                                    'clickmode': 'event+select',
-                                    'hovermode': 'x',           # set compare data on hover
-                                    'plot_bgcolor': backgroundColor,
-                                    },
-                            'data':thisGraphData}
+            # create dictionary with the layout and data
+            figdict = {'layout':{'title': grTitle,
+                                'xaxis':{'title': ctx['xlabel'], 'hoverformat': ctx['xformat']},
+                                'yaxis':yAxisDict,
+                                'clickmode': 'event+select',
+                                'hovermode': 'x',           # set compare data on hover
+                                'plot_bgcolor': backgroundColor,
+                                },
+                        'data':thisGraphData}
 
-                # Plotly's default margins reserve about 100 px above and 80 px
-                # below the plot area. On a short graph that leaves a thin strip
-                # of data between two bands of white, so the compact layout
-                # claims that space back: just enough for the title and the
-                # axis labels.
-                # The title is drawn inside the plotting area rather than in a
-                # band above it: 'paper' places it against the top of the axes,
-                # so it costs no page height at all.
-                if pageDensity == 'compact':
-                    figdict['layout']['margin'] = {'l': 60, 'r': 20,
-                                                   't': 8, 'b': 38}
-                    figdict['layout']['title'] = {'text': grTitle,
-                                                  'font': {'size': 13},
-                                                  'xref': 'paper', 'yref': 'paper',
-                                                  'x': 0.01, 'xanchor': 'left',
-                                                  'y': 1.0, 'yanchor': 'top',
-                                                  'pad': {'t': 4, 'l': 4}}
-           
-                #  store the id of this set - to be used in callback function generation
-                #  we mark all relevant Divs with this string
-                grID = graph+setStr
-                grList.append(grID)
+            # Plotly's default margins reserve about 100 px above and 80 px
+            # below the plot area. On a short graph that leaves a thin strip
+            # of data between two bands of white, so the compact layout
+            # claims that space back: just enough for the title and the
+            # axis labels.
+            # The title is drawn inside the plotting area rather than in a
+            # band above it: 'paper' places it against the top of the axes,
+            # so it costs no page height at all.
+            if pageDensity == 'compact':
+                figdict['layout']['margin'] = {'l': 60, 'r': 20,
+                                               't': 8, 'b': 38}
+                figdict['layout']['title'] = {'text': grTitle,
+                                              'font': {'size': 13},
+                                              'xref': 'paper', 'yref': 'paper',
+                                              'x': 0.01, 'xanchor': 'left',
+                                              'y': 1.0, 'yanchor': 'top',
+                                              'pad': {'t': 4, 'l': 4}}
+       
+            #  store the id of this set - to be used in callback function generation
+            #  we mark all relevant Divs with this string
+            grID = graph+setStr
+            grList.append(grID)
 
-                # One row per graph: the graph on the left, its click and
-                # selection readouts stacked in a narrow column on the right.
-                # Keeping them side by side is what lets successive graphs sit
-                # almost touching, since the readouts no longer consume a band
-                # of page width-wise between one graph and the next.
-                # Height needs a CSS unit. It used to be emitted as a bare
-                # string, e.g. '240', which is not valid CSS: the browser
-                # dropped it and every graph silently fell back to Plotly's
-                # 450 px default, whatever the configuration asked for.
-                graphStyle = {'padding': 0 if pageDensity == 'compact' else 20}
-                try:
-                    graphStyle['height'] = f"{int(float(dft.loc['Height','Value']))}px"
-                except (TypeError, ValueError):
-                    pass
+            # One row per graph: the graph on the left, its click and
+            # selection readouts stacked in a narrow column on the right.
+            # Keeping them side by side is what lets successive graphs sit
+            # almost touching, since the readouts no longer consume a band
+            # of page width-wise between one graph and the next.
+            # Height needs a CSS unit. It used to be emitted as a bare
+            # string, e.g. '240', which is not valid CSS: the browser
+            # dropped it and every graph silently fell back to Plotly's
+            # 450 px default, whatever the configuration asked for.
+            graphStyle = {'padding': 0 if pageDensity == 'compact' else 20}
+            try:
+                graphStyle['height'] = f"{int(float(ctx['height']))}px"
+            except (TypeError, ValueError):
+                pass
 
-                # the common-x class is what assets/graphsync.js keys on to
-                # decide which graphs share an x range
-                rowClass = 'row graph-row common-x' if commonX else 'row graph-row'
+            # the common-x class is what assets/graphsync.js keys on to
+            # decide which graphs share an x range
+            rowClass = 'row graph-row common-x' if commonX else 'row graph-row'
 
-                # keep the traces so a click on any graph of a commonX group
-                # can report every graph's values at that x
-                self.graphTraces[grID] = [
-                    (trace.get('name', ''), trace['x'], trace['y'],
-                     trace.get('text'))
-                    for trace in thisGraphData]
+            # keep the traces so a click on any graph of a commonX group
+            # can report every graph's values at that x
+            self.graphTraces[grID] = [
+                (trace.get('name', ''), trace['x'], trace['y'],
+                 trace.get('text'))
+                for trace in thisGraphData]
 
-                thisDivList.append(
-                    html.Div(className=rowClass, children=[
-                        html.Div(className='nine columns', children=[
-                            dcc.Graph
-                            (
-                                id=grID,
-                                figure=figdict,
-                                style=graphStyle,
-                            )
-                        ]),
-                        html.Div(className='three columns', children=[
-                            self.generateFeedbackBoxes(grID, isMarkers)
-                        ]),
-                    ])
-                )
-
-                if toDisk:
-                    self.graphToDisk(figdict, f'{grDir}/{graph}#{setStr}')
-
-        # only one Graph Div if all graphs are in subplots
-        if useSubplots:
-
-            figdict.update_layout(height=numGraphSets*grHeight)  
-
-            # Div with dcc.Graph using the figdict
             thisDivList.append(
-                html.Div
-                (
-                    [
+                html.Div(className=rowClass, children=[
+                    html.Div(className='nine columns', children=[
                         dcc.Graph
                         (
-                            id=graph,
+                            id=grID,
                             figure=figdict,
-                        ),
-                    ]
-                )
+                            style=graphStyle,
+                        )
+                    ]),
+                    html.Div(className='three columns', children=[
+                        self.generateFeedbackBoxes(grID, isMarkers, xmin, xmax)
+                    ]),
+                ])
             )
 
-            # Divs for click data and rectangle tool data feedback          
-            thisDivList.append(self.generateFeedbackBoxes(graph, isMarkers))
-
             if toDisk:
-                self.graphToDisk(figdict, f'{grDir}/{graph}')
+                self.graphToDisk(figdict, f'{grDir}/{graph}#{setStr}')
 
         # 5) Div bottom text: if supplied, append the sheet bottom text
         if 'GraphBottom' in dft.index:
@@ -1224,7 +1153,7 @@ class DashLinePlot():
             for grID in grList:
                 self.commonXGroups[grID] = list(grList)
 
-        return thisDivList, grList, xData.min(), xData.max()
+        return thisDivList, grList, xmin, xmax
 
     ##########################################
     def prepareGraphs(self):
@@ -1768,6 +1697,55 @@ class DashLinePlot():
             # current click index, click1, click2, range
             data = [1, [0,0], [0,0], [0,0]]
             self.clickedData[theGraph] = data
+
+            # ---- x-range entry -------------------------------------------
+            # Apply patches only the axis range into the figure already in the
+            # browser rather than returning a new one, so the data is not sent
+            # again; on a 19000-point trace that matters.
+            #
+            # On a commonX tab every graph listens to every graph's buttons, so
+            # one entry zooms the whole tab. _group is a default argument and
+            # not a closure, because the loop variable would otherwise be
+            # rebound long before the callback ever fires.
+            xGroup = self.commonXGroups.get(theGraph, [theGraph])
+
+            @dashApp.callback(
+                Output(theGraph, 'figure'),
+                [Input('xapply-' + sibling, 'n_clicks') for sibling in xGroup]
+                + [Input('xreset-' + sibling, 'n_clicks') for sibling in xGroup],
+                [State('xstart-' + sibling, 'value') for sibling in xGroup]
+                + [State('xend-' + sibling, 'value') for sibling in xGroup],
+                prevent_initial_call=True
+            )
+            def apply_xrange(*args, _group=xGroup):
+                fired = dash.callback_context.triggered
+                if not fired or fired[0]['value'] is None:
+                    return dash.no_update
+
+                widgetId = fired[0]['prop_id'].split('.')[0]
+                action, _, sourceGraph = widgetId.partition('-')
+
+                patched = Patch()
+                if action == 'xreset':
+                    patched['layout']['xaxis']['autorange'] = True
+                    return patched
+
+                if sourceGraph not in _group:
+                    return dash.no_update
+
+                # args arrive as inputs then states: 2n n_clicks, then n
+                # start values, then n end values
+                count = len(_group)
+                which = _group.index(sourceGraph)
+                start = args[2 * count + which]
+                end = args[3 * count + which]
+
+                if start is None or end is None or float(start) >= float(end):
+                    return dash.no_update
+
+                patched['layout']['xaxis']['autorange'] = False
+                patched['layout']['xaxis']['range'] = [float(start), float(end)]
+                return patched
 
             # On a commonX tab every graph's readout listens to every graph in
             # the group, so one click fills them all at the same x. The State

@@ -106,3 +106,32 @@
 .density-comfortable .feedback-box {
     margin-bottom: 1rem;
 }
+
+/* ---------- x-range entry, in the column beside the graph ---------- */
+
+.xrange-box .xrange-input {
+    width: 46%;
+    display: inline-block;
+    margin: 0 2% 0.2rem 0;
+    padding: 0.1rem 0.3rem;
+    height: auto;
+    font-size: 1.05rem;
+}
+
+.xrange-box .xrange-button {
+    width: 46%;
+    display: inline-block;
+    margin: 0 2% 0 0;
+    padding: 0 0.4rem;
+    height: 2.2rem;
+    line-height: 2.2rem;
+    font-size: 1.0rem;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.density-compact .xrange-box p {
+    margin: 0 0 0.1rem 0;
+    font-size: 1.1rem;
+    line-height: 1.2;
+}

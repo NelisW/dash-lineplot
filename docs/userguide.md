@@ -344,8 +344,6 @@ four and the graph set entries are required; the rest take defaults.
 | `Include` | `True` or `False`. Whether this tab appears at all. Defaults to `True`. |
 | `ToDisk` | `True` or `False`. Whether to write a standalone HTML copy into `graphs/`. |
 | `commonX` | `True` or `False`. Tie every graph on this tab to one x scale. Defaults to `False`. |
-| `UseSubplots` | `True` or `False`. See the note on subplots under features not currently available. |
-| `xSliderStep` | Resolution of the x-axis slider. See the note on the slider under features not currently available. |
 
 Any number of graphs may appear on one tab. A `Title` entry opens a new
 graph, and the `yLabel` and `yValue` entries that follow it belong to that
@@ -439,6 +437,47 @@ ship with the tool: the `gimbalFromxls` tab of `dash-config.xlsx`, and
 `commonx-example.json`, which puts the same three graphs on a linked tab
 and an unlinked tab for comparison.
 
+### Blocks: several data files on one tab
+
+A graph sheet is read top to bottom as a sequence of **blocks**. A `Height`
+row opens a block, and a `Datafile`, `xValue` or `xLabel` row applies to
+every graph below it until another row of the same kind replaces it. Each
+`Title` starts a graph, which takes whatever settings are in force at that
+point.
+
+A sheet with one `Height` at the top therefore behaves exactly as it always
+did: its single `Datafile` and `xValue` apply to every graph on the tab.
+Adding a second `Height` starts a second block, which is how one tab carries
+several data files:
+
+| Variable | Value | Effect |
+|---|---|---|
+| `Height` | 260 | opens the first block |
+| `Datafile` | `out/ENG-01/gimbal.json` | applies from here down |
+| `xLabel` | `Time [s]` | applies from here down |
+| `xValue` | `t` | applies from here down |
+| `Title` | Gimbal angles | first graph, drawn from `gimbal.json` |
+| `yLabel` | Angle [rad] | |
+| `yValue` | `theta_g` | |
+| `Height` | 260 | opens the second block |
+| `Datafile` | `out/ENG-01/camera.json` | replaces the first file from here down |
+| `Title` | Tracking error | second graph, drawn from `camera.json` |
+| `yLabel` | Error [rad] | |
+| `yValue` | `eps_y` | |
+
+The second block inherits `xValue` and `xLabel` from the first because it
+does not set them. It may set either, which matters when two files name
+their time column differently: the 3dof telemetry uses `t` while the older
+`.rgeo` data uses `CurrentSimTime`.
+
+Nothing is aligned or resampled between blocks. Each graph is drawn from its
+own file at the rate that file was recorded, and `commonX` ties their x axes
+together if you want them read as one.
+
+A single `yValue` row may still name its own `Datafile` in the `Datafile`
+**column**, which overrides its block for that one line. Use a block when a
+whole graph comes from another file, and the column when one line does.
+
 ### Mixing sample rates on one tab
 
 The `Datafile` on a graph sheet sets the default for that tab. A single
@@ -522,12 +561,14 @@ markdown from `PageTop`, then the `GraphTop` markdown, then one row per
 graph, then the `GraphBottom` and `PageBottom` markdown.
 
 Each graph occupies a row of its own, with the graph on the left and its
-two readout boxes stacked in a narrow column on the right:
+controls and readouts stacked in a narrow column on the right:
 
 ```text
 +-------------------------------------------+  +-----------------+
-|                                           |  | Click Data      |
+|                                           |  | X range         |
 |                  graph                    |  +-----------------+
+|                                           |  | Click Data      |
+|                                           |  +-----------------+
 |                                           |  | Rectangle Tool  |
 +-------------------------------------------+  +-----------------+
 ```
@@ -559,6 +600,27 @@ Each graph resolves that x position against its own samples. Graphs
 recorded at different rates therefore show their own nearest sample rather
 than an interpolated one, and a graph whose x range does not cover the
 hovered position simply shows nothing.
+
+### Setting the x range by typing it
+
+The column beside each graph starts with an **X range** box: a start value,
+an end value, **Apply** and **Reset**. Type both values and press Apply to
+zoom the graph to exactly that interval; press Reset to go back to the full
+data range. The two fields show the data's own first and last x as
+placeholder text, so the available range is visible without guessing.
+
+This is what the range slider of earlier versions provided. The slider
+itself is gone, and with it the instruction to click the current tab before
+anything happened; typing a start and an end now takes effect immediately.
+
+On a tab with `commonX`, Apply and Reset drive **every** graph on the tab,
+not only the one whose boxes were used, so the whole tab moves to the same
+interval.
+
+Only the axis range is changed. The data already in the browser is reused
+rather than re-sent, which is what makes this instant even on a trace of
+19000 points. A start value greater than or equal to the end is ignored
+rather than producing an inverted axis.
 
 ### Zoom, pan and the Plotly toolbar
 
@@ -631,16 +693,16 @@ version. They are recorded here so their absence is not mistaken for a
 fault.
 
 - **The x-axis range slider.** The original version placed a range slider
-  above each page, with text boxes and a reset button, to restrict the
-  graphs to a chosen x interval. Its layout is commented out in the source.
-  The reason given there is that the slider depended on the user clicking
-  the current tab to trigger a redraw, and that mechanism stopped working
-  with newer versions of the underlying modules. Use the Plotly zoom
-  controls instead. The `xSliderStep` configuration variable is still read
-  but currently has no effect.
+  above each page, with text boxes, a submit and a reset button. It depended
+  on the reader clicking the current tab to trigger a redraw, and that
+  mechanism stopped working. The capability it provided is back as the
+  **X range** boxes beside each graph, described above; the slider widget
+  itself is not, and `xSliderStep` has been removed with it.
 - **Subplots.** `UseSubplots` grouped the graph sets of one sheet into a
-  single Plotly figure with shared axes. The path is disabled and the
-  script reports `Subplots functionality disabled` on start-up.
+  single Plotly figure with shared axes. It had been disabled for some time,
+  printing `Subplots functionality disabled` on every run, and is now
+  removed outright. Blocks and `commonX` cover what it was for: several
+  graphs from several files on one tab, sharing one x range.
 - **Hover synchronised through subplots.** The original mechanism grouped
   a sheet's graph sets into one Plotly figure and relied on the `visdcc`
   package to inject the linking JavaScript. Both are gone. Synchronised
