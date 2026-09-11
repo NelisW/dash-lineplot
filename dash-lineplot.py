@@ -1491,27 +1491,13 @@ class DashLinePlot():
             else:
                 dfData = df
 
-            if '%Time' in dfData.columns.values[0]:
-                dfData['Time'] = dfData['%Time']
-                dfData.drop(['%Time'], axis=1,inplace=True)
-            if '%CurrentSimTime' in dfData.columns.values[0]:
-                dfData['CurrentSimTime'] = dfData['%CurrentSimTime']
-                dfData.drop(['%CurrentSimTime'], axis=1,inplace=True)
-            if '%t' in dfData.columns:
-                dfData['t'] = dfData['%t']
-                dfData.drop(['%t'], axis=1,inplace=True)
+            # a leading '%' is comment syntax, not part of the column name,
+            # so strip it from whichever heading carries it
+            dfData.columns = [str(c).lstrip('%').strip() for c in dfData.columns]
                 
         # load comma separated data
         if comma or '.csv' in filename:
             dfData = pd.read_csv(filename, sep=',',header=0)
-
-        # load spectral data
-        if '.scd' in filename or '.spc' in filename:
-            dfData = pd.read_csv(filename, delimiter=r'\s+',header=None)
-            if dfData.shape[1] == 3:
-                dfData.columns=['wavelen','wavenum','trans']
-            else:
-                dfData.columns=['wavelen','wavenum','emis','trans','refl']
 
         return dfData
 
