@@ -566,7 +566,9 @@ controls and readouts stacked in a narrow column on the right:
 ```text
 +-------------------------------------------+  +-----------------+
 |                                           |  | X range         |
-|                  graph                    |  +-----------------+
+|                  graph                    |  | Y range         |
+|                                           |  | Apply   Reset   |
+|                                           |  +-----------------+
 |                                           |  | Click Data      |
 |                                           |  +-----------------+
 |                                           |  | Rectangle Tool  |
@@ -601,26 +603,38 @@ recorded at different rates therefore show their own nearest sample rather
 than an interpolated one, and a graph whose x range does not cover the
 hovered position simply shows nothing.
 
-### Setting the x range by typing it
+### Setting the axis ranges by typing them
 
-The column beside each graph starts with an **X range** box: a start value,
-an end value, **Apply** and **Reset**. Type both values and press Apply to
-zoom the graph to exactly that interval; press Reset to go back to the full
-data range. The two fields show the data's own first and last x as
+The column beside each graph starts with a range box: a start and an end for
+**X range**, the same for **Y range**, and one **Apply** and **Reset** pair
+serving both. Each field shows that graph's own first and last value as
 placeholder text, so the available range is visible without guessing.
 
-This is what the range slider of earlier versions provided. The slider
-itself is gone, and with it the instruction to click the current tab before
-anything happened; typing a start and an end now takes effect immediately.
+Fill in either pair, or both, and press Apply. A pair left blank is left
+alone, so the y range can be set without disturbing the x range and the
+other way round. Reset returns both axes to the full data range.
 
-On a tab with `commonX`, Apply and Reset drive **every** graph on the tab,
-not only the one whose boxes were used, so the whole tab moves to the same
-interval.
+This is what the range slider of earlier versions provided, plus the y axis
+it never had. The slider itself is gone, and with it the instruction to
+click the current tab before anything happened; typing a start and an end
+now takes effect immediately.
 
-Only the axis range is changed. The data already in the browser is reused
+**The two axes behave differently on a `commonX` tab**, and deliberately so:
+
+| Axis | Reach |
+|---|---|
+| X | Every graph on the tab, so the whole tab moves to the same interval |
+| Y | Only the graph whose boxes were used |
+
+The graphs of a tab have their own y scales and often their own units, so a
+y range taken from one would be meaningless on another. X is the only axis
+they share. Reset follows the same rule: it returns x on the whole tab and y
+on the graph whose button was pressed.
+
+Only the axis ranges are changed. The data already in the browser is reused
 rather than re-sent, which is what makes this instant even on a trace of
-19000 points. A start value greater than or equal to the end is ignored
-rather than producing an inverted axis.
+19000 points. A start greater than or equal to its end is ignored rather
+than producing an inverted axis, and the other axis still applies.
 
 ### Zoom, pan and the Plotly toolbar
 

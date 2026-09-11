@@ -305,6 +305,33 @@ def readJsonData(path, group):
         f'groups, but holds {type(content).__name__}.')
 
 ################################################################
+def traceYExtent(traces):
+    """
+    Smallest and largest y over the traces of one graph.
+
+    Used only for the placeholder text in the Y range boxes, so a reader can
+    see what range the graph covers without guessing. Missing values are
+    ignored, and a graph with nothing numeric on it yields (None, None).
+
+    Args:
+        | traces (list): the trace dicts of one graph.
+
+    Returns:
+        | (tuple): (ymin, ymax), either of which may be None.
+
+    """
+    lo, hi = None, None
+    for trace in traces:
+        values = np.asarray([np.nan if v is None else v for v in trace['y']],
+                            dtype=float)
+        if values.size == 0 or np.all(np.isnan(values)):
+            continue
+        low, high = float(np.nanmin(values)), float(np.nanmax(values))
+        lo = low if lo is None else min(lo, low)
+        hi = high if hi is None else max(hi, high)
+    return lo, hi
+
+################################################################
 def resolveSetContexts(dft):
     """
     The settings in force for each graph on a sheet.
@@ -686,7 +713,8 @@ class DashLinePlot():
         return '\n'.join(lines)
 
     ##########################################
-    def generateFeedbackBoxes(self, id, isMarkers, xmin=None, xmax=None):
+    def generateFeedbackBoxes(self, id, isMarkers, xmin=None, xmax=None,
+                              ymin=None, ymax=None):
         """
         Builds the column beside a graph: x-range entry and the readout boxes
 
@@ -702,6 +730,8 @@ class DashLinePlot():
                              what makes a selection possible at all.
             | xmin (double): smallest x in the data, shown as a placeholder.
             | xmax (double): largest x in the data, shown as a placeholder.
+            | ymin (double): smallest y on this graph, shown as a placeholder.
+            | ymax (double): largest y on this graph, shown as a placeholder.
 
         Returns:
             | thisDivList (list): list of html Divs.
@@ -736,9 +766,14 @@ class DashLinePlot():
                             className='feedback-box'
                         )
 
-        # x-range entry: type a start and an end, Apply to zoom, Reset to go
-        # back to the full data range. On a commonX tab this drives every
-        # graph on the tab, not just this one.
+        # Axis range entry: type a start and an end on either axis, Apply to
+        # zoom, Reset to go back to the full data range. One pair of buttons
+        # drives both axes.
+        #
+        # On a commonX tab the x range applies to every graph on the tab,
+        # while the y range applies only to the graph whose boxes were used:
+        # the graphs of a tab have their own y scales and often their own
+        # units, so a y range from one means nothing on another.
         def bound(value):
             return '' if value is None else f'{float(value):.6g}'
 
@@ -750,6 +785,13 @@ class DashLinePlot():
                                       className='xrange-input'),
                             dcc.Input(id='xend-' + id, type='number',
                                       placeholder=bound(xmax),
+                                      className='xrange-input'),
+                            dcc.Markdown(""" **Y range** """),
+                            dcc.Input(id='ystart-' + id, type='number',
+                                      placeholder=bound(ymin),
+                                      className='xrange-input'),
+                            dcc.Input(id='yend-' + id, type='number',
+                                      placeholder=bound(ymax),
                                       className='xrange-input'),
                             html.Button('Apply', id='xapply-' + id,
                                         className='xrange-button'),
@@ -1117,7 +1159,8 @@ class DashLinePlot():
                         )
                     ]),
                     html.Div(className='three columns', children=[
-                        self.generateFeedbackBoxes(grID, isMarkers, xmin, xmax)
+                        self.generateFeedbackBoxes(grID, isMarkers, xmin, xmax,
+                                                   *traceYExtent(thisGraphData))
                     ]),
                 ])
             )
@@ -1714,38 +1757,62 @@ class DashLinePlot():
                 [Input('xapply-' + sibling, 'n_clicks') for sibling in xGroup]
                 + [Input('xreset-' + sibling, 'n_clicks') for sibling in xGroup],
                 [State('xstart-' + sibling, 'value') for sibling in xGroup]
-                + [State('xend-' + sibling, 'value') for sibling in xGroup],
+                + [State('xend-' + sibling, 'value') for sibling in xGroup]
+                + [State('ystart-' + sibling, 'value') for sibling in xGroup]
+                + [State('yend-' + sibling, 'value') for sibling in xGroup],
                 prevent_initial_call=True
             )
-            def apply_xrange(*args, _group=xGroup):
+            def apply_ranges(*args, _group=xGroup, _self=theGraph):
                 fired = dash.callback_context.triggered
                 if not fired or fired[0]['value'] is None:
                     return dash.no_update
 
                 widgetId = fired[0]['prop_id'].split('.')[0]
                 action, _, sourceGraph = widgetId.partition('-')
+                if sourceGraph not in _group:
+                    return dash.no_update
+
+                # y belongs to the graph whose boxes were used and to no
+                # other: the graphs of a commonX tab have their own y scales,
+                # and often their own units, so one graph's y range is
+                # meaningless on another. x is the only axis they share.
+                mine = sourceGraph == _self
 
                 patched = Patch()
                 if action == 'xreset':
                     patched['layout']['xaxis']['autorange'] = True
+                    if mine:
+                        patched['layout']['yaxis']['autorange'] = True
                     return patched
 
-                if sourceGraph not in _group:
-                    return dash.no_update
-
-                # args arrive as inputs then states: 2n n_clicks, then n
-                # start values, then n end values
+                # args arrive as inputs then states: 2n n_clicks, then n of
+                # each of xstart, xend, ystart, yend
                 count = len(_group)
                 which = _group.index(sourceGraph)
-                start = args[2 * count + which]
-                end = args[3 * count + which]
+                xStart, xEnd = args[2 * count + which], args[3 * count + which]
+                yStart, yEnd = args[4 * count + which], args[5 * count + which]
 
-                if start is None or end is None or float(start) >= float(end):
-                    return dash.no_update
+                def span(start, end):
+                    if start is None or end is None:
+                        return None
+                    if float(start) >= float(end):
+                        return None
+                    return [float(start), float(end)]
 
-                patched['layout']['xaxis']['autorange'] = False
-                patched['layout']['xaxis']['range'] = [float(start), float(end)]
-                return patched
+                changed = False
+                xSpan = span(xStart, xEnd)
+                if xSpan is not None:
+                    patched['layout']['xaxis']['autorange'] = False
+                    patched['layout']['xaxis']['range'] = xSpan
+                    changed = True
+
+                ySpan = span(yStart, yEnd) if mine else None
+                if ySpan is not None:
+                    patched['layout']['yaxis']['autorange'] = False
+                    patched['layout']['yaxis']['range'] = ySpan
+                    changed = True
+
+                return patched if changed else dash.no_update
 
             # On a commonX tab every graph's readout listens to every graph in
             # the group, so one click fills them all at the same x. The State
