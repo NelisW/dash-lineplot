@@ -12,3 +12,6 @@ graphs/
 # Python bytecode cache.
 __pycache__/
 *.pyc
+
+# LibreOffice lock files, created while a document is open.
+.~lock.*#
