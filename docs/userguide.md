@@ -614,6 +614,15 @@ Fill in either pair, or both, and press Apply. A pair left blank is left
 alone, so the y range can be set without disturbing the x range and the
 other way round. Reset returns both axes to the full data range.
 
+**The boxes follow the mouse.** Drag-zooming, panning or double-clicking a
+graph writes the resulting range back into its boxes, so what they show is
+always what the axis is actually set to rather than whatever was last typed.
+An axis the gesture did not touch is left alone: zooming in x does not
+disturb the y boxes. Autoscaling, by double-click or the toolbar, blanks the
+pair, since blank means the full data range and the placeholder says what
+that is. On a `commonX` tab the graphs dragged along with the zoom update
+their x boxes too.
+
 The fields are plain text boxes rather than spin boxes, so no browser draws
 increment arrows beside them: a step of one is either nothing or everything
 depending on the signal, and the arrows only ate width. Anything a number

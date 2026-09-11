@@ -1823,6 +1823,48 @@ class DashLinePlot():
 
                 return patched if changed else dash.no_update
 
+            # ---- keep the range boxes showing what the axes actually are ---
+            # Zooming, panning or double-clicking with the mouse changes the
+            # axes without going anywhere near the boxes, which would then sit
+            # showing a stale range. Plotly reports every such change as
+            # relayoutData, so the boxes follow it.
+            #
+            # This also covers the graphs a commonX tab drives through
+            # graphsync.js: the programmatic relayout raises the same event on
+            # each of them, so their x boxes update too.
+            @dashApp.callback(
+                [Output('xstart-' + theGraph, 'value'),
+                 Output('xend-' + theGraph, 'value'),
+                 Output('ystart-' + theGraph, 'value'),
+                 Output('yend-' + theGraph, 'value')],
+                Input(theGraph, 'relayoutData'),
+                prevent_initial_call=True
+            )
+            def show_ranges(relayout):
+                if not relayout:
+                    return (dash.no_update,) * 4
+
+                def shown(value):
+                    return f'{float(value):.6g}'
+
+                def axis(name):
+                    """Start and end for one axis, or no_update if untouched."""
+                    if relayout.get(f'{name}.autorange'):
+                        # back to the full data range: blank means exactly
+                        # that, and the placeholder says what it is
+                        return '', ''
+                    low, high = f'{name}.range[0]', f'{name}.range[1]'
+                    if low in relayout and high in relayout:
+                        return shown(relayout[low]), shown(relayout[high])
+                    if f'{name}.range' in relayout:
+                        span = relayout[f'{name}.range']
+                        return shown(span[0]), shown(span[1])
+                    return dash.no_update, dash.no_update
+
+                xStart, xEnd = axis('xaxis')
+                yStart, yEnd = axis('yaxis')
+                return xStart, xEnd, yStart, yEnd
+
             # On a commonX tab every graph's readout listens to every graph in
             # the group, so one click fills them all at the same x. The State
             # carries the id of the graph this particular box belongs to,
