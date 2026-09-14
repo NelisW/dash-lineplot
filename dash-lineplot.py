@@ -17,7 +17,6 @@
 
 This script reads a config file, in Excel or JSON form, and one or more of
 the following data file types:
-    * matlab file with data in 'DATA', variable names in 'NAM' and time base in 'TIME'
     * csv files with column names in top row
     * first sheet of an xlsx file with column names in top row
     * json files holding either one record array, a list of flat objects with
@@ -1430,20 +1429,12 @@ class DashLinePlot():
     def readdatafile(self, filename):
         """Read a comma or space separated data file into a dataframe.
 
-        OSSIM data files can use comma or space separated data files.
-        These files normally have one comma or one or more space separators. 
-        The header line for space separated files start with a percentage to allow
-        loading of the file with Matlab. There might be a space between the % en the 
-        name of the first column, e.g. '%time' or '% time'. Using pandas.read_csv() 
-        will not work if a space is present between the % and the column name.
+        Data files can be comma, tab or space separated.
+        The header line can also start with a percentage to allow Matlab loading.
+        There might be a space between the % and the first column name.
+        This function firstly cleans up the header line, counts the metadata comment lines
+        and then loads the data.
 
-        This function tries to read the different styles of files into a 
-        Pandas dataframe, removing the percentage and any spaces before the first column 
-        heading (rest as in data file).
-            
-        The number of header lines may vary, discard all lines that starts with %
-        using the last as header.
-            
         Args:
             | filename (string): csv filename. 
 
@@ -1451,53 +1442,36 @@ class DashLinePlot():
             | dfData (pandas.DataFrame): dataframe with loaded data.
         
         """
-        # empty dataframe
-        dfData = None
-            
-        # determine if there are lines to skip before header line
-        skiprows = 0
-        headerDone = False
-        with open(filename,'r') as fin:
-            while not headerDone:
-                line=fin.readline()
-                if '%' in line:
-                    skiprows = skiprows + 1
+
+        import re
+
+        header_line = None
+        skip_count = 0
+
+        # Scan the file to find the header and count total metadata lines
+        with open(filename, "r") as file:
+            for line in file:
+                if line.strip().startswith("%"):
+                    skip_count += 1
+                    # Assuming the VERY FIRST line is your header
+                    if header_line is None:
+                        header_line = line
                 else:
-                    headerDone = True
-                    
-        # leave the last line as header  
-        skiprows = skiprows - 1
-    
-        # identify the file type
-        with open(filename,'r') as fin:
-            line = fin.readline()
-            if len(line) > 0:
-                matlab = True if '%' in line else False
-                matlabspace = True if ' ' == line[1] else False
-                comma = True if ',' in line else False
-            else:
-                print('File {} has no contents, returning None'.format(filename))
-                return None
-        
-        # load the data if matlab or space separated
+                    break
 
-        if matlab or '.plt' in filename:
-            df = pd.read_csv(filename, sep=r'\s+',engine='python',header=0,skiprows=skiprows)
-            
-            # the leading '% ' in header messes up the column headings, fix:
-            if matlabspace:
-                dfData = df[df.columns[:-1]]
-                dfData.columns = df.columns[1:]
-            else:
-                dfData = df
+        # Parse the header column names dynamically (handling spaces, commas, or tabs)
+        header = header_line.strip().removeprefix("%")
+        header = header.lstrip()
+        column_headers = re.split(r",|\t|\s+", header)
 
-            # a leading '%' is comment syntax, not part of the column name,
-            # so strip it from whichever heading carries it
-            dfData.columns = [str(c).lstrip('%').strip() for c in dfData.columns]
-                
-        # load comma separated data
-        if comma or '.csv' in filename:
-            dfData = pd.read_csv(filename, sep=',',header=0)
+        # Load the data rows, skipping all '%' metadata lines, and apply the headers
+        dfData = pd.read_csv(
+            filename, 
+            skiprows=skip_count, 
+            names=column_headers, 
+            sep=r",|\t|\s+", # Handles mixed separators in the data rows too
+            engine="python"  # Required when using regex separators in pandas
+        )
 
         return dfData
 
@@ -1529,7 +1503,6 @@ class DashLinePlot():
         self.dateCreated = str(datetime.date.today())
 
         # run through all unique file names
-
         success = True
         for datafilename in datafilenames:
 
@@ -1550,34 +1523,11 @@ class DashLinePlot():
                 # determine what type of file is this by looking at the file extension
                 extension = os.path.splitext(datapath)[1]
 
-                # matlab format files
-                # note that here we rely on the Denel GTV matlab file which has 
-                #  * the data stored in 'DATA'
-                #  * the data column names in 'NAM'
-                #  * the time variable is called 'TIME'
-                # if other applications need matlab file capability this must be generalised
-                if 'mat' in extension:
-
-                    # load the gtv telemetry data in matlab format file
-                    # scipy reads in structures as structured numpy arrays of dtype object
-                    # returns a dictionary with variable names as keys, and loaded matrices as values.
-                    from scipy.io import loadmat
-                    dataMat = loadmat(datapath)
-
-                    # create the dataframe
-                    self.datafiles[datafilename] = pd.DataFrame(dataMat['DATA'], columns=dataMat['NAM'])
-
-                    # set beginning of data set as time zero
-                    self.datafiles[datafilename]['TIME'] = self.datafiles[datafilename]['TIME'] - self.datafiles[datafilename]['TIME'].values[0]
-                    
-                    # get date 
-                    self.dateCreated = dataMat['Date_Created'][0]
-
                 # Excel data files
                 # top row is data column names
                 # Only the first sheet is loaded
-                # To be generalised to specify the sheet from the config file
-                elif 'xls' in extension:
+                # To be generalised: specify the sheet from the config file
+                if 'xls' in extension:
                     self.datafiles[datafilename] = pd.read_excel(datapath, index_col=None)
 
                 # JSON files: either one record array, or an object of named
@@ -1589,8 +1539,7 @@ class DashLinePlot():
                 #  top line is column names
                 else:
                     self.datafiles[datafilename] = self.readdatafile(datapath)
-                    # pd.read_csv(datapath, sep="\s+|,|;", index_col=None,engine='python')
-
+ 
             else:
                 print(f'Data file {datapath} for plotting not found, please provide a valid file name in the config file!\n ')
                 success = False
