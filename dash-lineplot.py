@@ -908,10 +908,8 @@ class DashLinePlot():
             os.mkdir(grDir)
 
         # graphs to disk requested?
-        toDisk = True
-        if 'ToDisk' in dft.index:
-            if not pd.isna(dft[(dft['Variable']=='ToDisk')]['Value'].values[0]):
-                toDisk = dft[(dft['Variable']=='ToDisk')]['Value'].values[0]
+        to_disk_rows = dft[dft['Variable'] == 'ToDisk']['Value']
+        toDisk = cellFlag(to_disk_rows.values[0], default=True) if not to_disk_rows.empty else True
 
         # commonX ties every graph on this tab to one x scale: zooming or
         # panning any of them applies the same range to all, and a click on
@@ -1306,10 +1304,8 @@ class DashLinePlot():
                 allGraphs.append(grID)
             
             # First check exclude flag
-            toInclude = True
-            if 'Include' in dft.index:
-                if not pd.isna(dft[(dft['Variable']=='Include')]['Value'].values[0]):
-                    toInclude = dft[(dft['Variable']=='Include')]['Value'].values[0]
+            to_include_rows = dft[dft['Variable'] == 'Include']['Value']
+            toInclude = cellFlag(to_include_rows.values[0], default=True) if not to_include_rows.empty else True
             
             # collect data and build the data for the sheet
             if toInclude:
@@ -1626,7 +1622,7 @@ class DashLinePlot():
         # directory for this Dash app
         # this must be global to stay in scope in applications that use the plotter as a module
         global dashApp
-        dashApp = dash.Dash(__name__, external_stylesheets=external_stylesheets,
+        dashApp = dash.Dash(__name__, 
                             assets_folder=resource_path('assets'),
                             title=pagetitle if pagetitle else 'Dash')
 
@@ -1636,6 +1632,9 @@ class DashLinePlot():
         dashApp.layout = pageLayout
 
         # We have a dynamic layout, so we can ignore the exception
+        # todo:  consider dropping suppress_callback_exceptions,
+        # or keeping it only for the dynamic tab content that genuinely needs
+        # it, so the next id mismatch is reported instead of ignored
         dashApp.config['suppress_callback_exceptions']=True
 
         # generate all callback functions for all possible graph sets & tabs
@@ -1727,7 +1726,8 @@ class DashLinePlot():
         # generate data clicked and selected callback functions for all possible graphs in the config
         # i.e. subplots as well as individual graph sets
         # must be able to handle changed config input from the user
-        for gr in itertools.chain(allTabs,allGraphs):
+        # for gr in itertools.chain(allTabs,allGraphs):
+        for gr in itertools.chain(graphList):
             theGraph = str(gr)
 
             # initialise the clicked data storage
