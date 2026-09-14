@@ -46,11 +46,15 @@ python dash-lineplot.py --configfile commonx-example.json
 This script reads a config file, in Excel or JSON form, and one or more of
 the following data file types:
 
-    * matlab file with data in 'DATA', variable names in 'NAM' and time base in 'TIME'
     * csv files with column names in top row
     * first sheet of an xlsx file with column names in top row
     * json files holding a record array: a list of flat objects, one per sample
     * json files holding named groups, one per sample rate, selected as file.json#group
+
+Matlab (`.mat`) files are no longer supported: the reader that loaded
+`DATA`/`NAM`/`TIME` from a Matlab file, and the `scipy` dependency it
+needed, were both removed. See [docs/userguide.md](docs/userguide.md) for
+the current list, including a known limitation in the plain-CSV reader.
 
 Text-valued columns are treated as enumerations: they are drawn as steps
 with the state names on the y axis. Every graph on a page shares the hover
@@ -102,12 +106,10 @@ There are numerous Dash and Plotly resources on the Internet:
     https://towardsdatascience.com/creating-an-interactive-data-app-using-plotlys-dash-356428b4699c
     https://dash.plot.ly/dash-core-components/tabs
     https://dash.plot.ly/getting-started-part-2
-    https://plot.ly/python/range-slider/
     https://plot.ly/python/click-events/
 
-This script requires dash, plotly, pandas, numpy, openpyxl, scipy and some
-system modules. `scipy` is needed only by the Matlab reader and is imported
-lazily. Build the environment from `environment.yml` in this folder, which
+This script requires dash, plotly, pandas, numpy, openpyxl and some system
+modules. Build the environment from `environment.yml` in this folder, which
 pins version floors only and carries no `prefix`, so it solves on Linux and
 on Windows alike:
 
@@ -125,20 +127,19 @@ neither applies to a current solve.
 
 To use as a module in another application:
 
-1. Import the DashLinePlot and DashPlotWindow classes from the module
-   
+1. Import the `DashLinePlot` class from the module. There is no
+   `DashPlotWindow`: the class that wrapped the server in a Qt desktop
+   window was removed along with PySide2/PyQt5 (see above), and nothing
+   replaces it, since the browser is the window now.
+
 1. In your code implement something like:
 
-        # create new window
-        self.dashWidget = DashPlotWindow(port)
-        self.dashWidget.show()
-
         # do actual plotting
-        useCallBacks = True
+        useCallbacks = True
         plotConfig = './dash-config.xlsx'
         port = '8050' 
         dashlineplotter = DashLinePlot()
-        dashlineplotter.runPlotter(port, plotConfig, useCallBacks)
+        dashlineplotter.runPlotter(port, plotConfig, useCallbacks)
 
 Notes from https://dash.plot.ly/getting-started:
 
@@ -216,7 +217,7 @@ A Div component is a wrapper for the HTML5 element.
 This code is subject to the licenses listed below.
 You may not use this file except in compliance with these Licenses. 
 
-Python, scipy, numpy, pandas, openpyxl and other 'standard' modules are licensed under the Python License: 
+Python, numpy, pandas, openpyxl and other 'standard' modules are licensed under the Python License: 
 
     https://docs.python.org/3/license.html
 

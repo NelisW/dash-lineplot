@@ -19,10 +19,8 @@ lost in between.
 
 ### Requirements
 
-The utility needs a Python environment with Dash, Plotly, pandas, numpy,
-openpyxl and scipy. Everything it uses is open source. `scipy` is needed
-only by the Matlab data reader and is imported lazily, so it costs nothing
-until a `.mat` file is actually read.
+The utility needs a Python environment with Dash, Plotly, pandas, numpy and
+openpyxl. Everything it uses is open source.
 
 The environment is defined by `environment.yml` in the repository root. That
 file pins version floors rather than exact builds and carries no `prefix`,
@@ -154,10 +152,25 @@ The type is chosen from the file extension.
 
 | Extension | Format |
 |---|---|
-| `.csv` and most others | Column names on the top line, one sample per line. |
+| `.csv` and most others | See the note below: currently requires a `%`-prefixed header line. |
 | `.xlsx` | First sheet only, column names in the top row. |
 | `.json` | A record array, or an object of named groups. See below. |
-| `.mat` | Matlab file with data in `DATA`, column names in `NAM` and the time base in `TIME`. |
+
+Matlab (`.mat`) files are no longer supported; the reader that loaded
+`DATA`/`NAM`/`TIME` from a Matlab file was removed, along with the `scipy`
+dependency it needed. See "Features not currently available" below.
+
+**Known limitation, not the intended design:** the `.csv`/generic reader
+currently requires the file to carry at least one comment line starting
+with `%` (a leftover of the removed Matlab reader's header convention,
+optionally with a space before the first column name, as in `%time` or
+`% time`), whose text supplies the column headers, followed by the data
+rows. A plain CSV with an ordinary column-name header row and no `%` line
+at all will raise `AttributeError` rather than being read. This is tracked
+as an open defect in `suggestedwork.md` (finding N3); it is not a
+documented feature and should not be relied on. Every data file shipped
+with this repository happens to carry a `%` header, which is why the defect
+has not surfaced here.
 
 The result is one table per file, or per group within a file, and the
 configuration refers to columns of that table by name.
@@ -523,6 +536,16 @@ and `yLabel` rows in the case of `Format`.
 | `Categories` | Ordered state names for an enumeration column. A comma-separated list in a spreadsheet cell, a JSON list in a JSON config. Defaults to order of first appearance. |
 | `Datafile` | Data file for this line only, overriding the sheet's. This is how one tab carries several sample rates. |
 
+`Scale` and `Offset` (and the `xValue` row's own `Scale`/`Offset`, which
+apply to the x axis) only move where a line is *drawn*, so that signals of
+very different magnitude -- microvolts and megavolts, say -- can share one
+axis. **They never change a value the reader reads off.** The hover
+tooltip, the Click Data box and the Rectangle Tool Selection Data box all
+report the true value as it stands in the data file, regardless of any
+Scale or Offset applied to the line for display. A line plotted at
+`Scale=0.01` still reports its unscaled, original value when clicked or
+hovered over, not the scaled plot position.
+
 When a workbook renders incorrectly, the first thing to check is stray
 content in cells below the intended range. Clearing the contents of every
 cell below the last real row is a reliable precaution.
@@ -689,6 +712,23 @@ selection made with either of the two Plotly selection tools. Both are
 supported: Box Select reports the rectangle drawn, and Lasso Select reports
 the bounding box of the polygon drawn.
 
+The box reports the selected x window and, for every line on the graph,
+that line's own true y extent inside it -- the same format the `commonX`
+section above shows for a linked tab, since a selection box's corners are a
+single scaled plot position and cannot be converted back to a true value
+when different lines on the same graph carry different `Scale`/`Offset`:
+
+```text
+Selected x: [2.000000, 5.000000]
+Width    x: 3.000000
+  Distance: y in [102.400000, 388.150000]  (301 samples)
+  X: y in [-40.200000, 55.900000]  (301 samples)
+```
+
+An enumeration line lists the states it visited inside the window rather
+than a minimum and maximum, which would be meaningless for a state name,
+exactly as under `commonX` above.
+
 It is easy to conclude that the tool is broken, because two conditions must
 both hold before anything appears. Step by step:
 
@@ -703,8 +743,7 @@ both hold before anything appears. Step by step:
 1. Hover the graph so the Plotly toolbar appears at its top right, and
    click **Box Select** or **Lasso Select**. Until a selection tool is
    chosen, dragging pans or zooms instead of selecting.
-1. Drag across the region of interest. The box then reports the top-left
-   and bottom-right corners and the extent in x and y.
+1. Drag across the region of interest.
 
 If the box still reads `none selected`, the selection enclosed no data
 points. Selecting an empty region of the plot area is the usual cause.
@@ -743,10 +782,12 @@ fault.
 - **The packaged executable and its Windows launcher.** `dash-lineplot.exe`,
   `startPlotTool.bat` and the PyInstaller configuration package a Qt
   desktop application that no longer exists. Start the script directly.
-
-TODO: the Matlab reader is carried forward unchanged from the original
-version and has not been exercised against a current Matlab file. It is
-documented here as designed, not as verified.
+- **Matlab (`.mat`) file support.** The reader that loaded `DATA`/`NAM`/
+  `TIME` from a Matlab file, and the `scipy` dependency it needed, have
+  been removed outright rather than carried forward. A `.mat` file named in
+  a configuration is not reported with a clear error; it falls through to
+  the generic text reader and fails confusingly. If Matlab support is
+  needed again, it has to be re-added, not just re-enabled.
 
 ## Further reading
 

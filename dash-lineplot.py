@@ -2,7 +2,7 @@
 # The contents of this file are subject to the licenses listed below.
 # You may not use this file except in compliance with these Licenses. 
 # 
-# Python, scipy, numpy, pandas, openpyxl and other 'standard' modules are
+# Python, numpy, pandas, openpyxl and other 'standard' modules are
 # licensed under the Python License: https://docs.python.org/3/license.html.
 #
 # plotly/dash is licensed under MIT https://community.plot.ly/t/pricing-and-license/9714
@@ -67,16 +67,14 @@ https://plot.ly/python/reference/
 https://www.datacamp.com/community/tutorials/learn-build-dash-python
 https://github.com/plotly/dash-recipes
 https://github.com/plotly/dash-recipes/blob/master/multiple-hover-data.py
-https://plot.ly/python/subplots/
 https://towardsdatascience.com/creating-an-interactive-data-app-using-plotlys-dash-356428b4699c
 https://dash.plot.ly/dash-core-components/tabs
 https://dash.plot.ly/getting-started-part-2
-https://plot.ly/python/range-slider/
 https://plot.ly/python/click-events/
 
-This script requires dash, plotly, pandas, numpy, openpyxl, scipy and some
-system modules. Create the environment from the environment.yml shipped
-beside this script, which solves on both Linux and Windows:
+This script requires dash, plotly, pandas, numpy, openpyxl and some system
+modules. Create the environment from the environment.yml shipped beside
+this script, which solves on both Linux and Windows:
 
     conda env create -f environment.yml
     conda activate dashplot
@@ -96,13 +94,12 @@ https://anaconda.org/plotly/dash/files
 
 To use as a module in another application:
 
-1) Import the DashLinePlot and DashPlotWindow classes from the module
-            
-2) In your code implement something like:
+1) Import the DashLinePlot class from the module. There is no
+   DashPlotWindow: the class that wrapped the server in a Qt desktop window
+   was removed along with PySide2/PyQt5, and nothing replaces it, since the
+   browser is the window now.
 
-    # create new window
-    self.dashWidget = DashPlotWindow(port)
-    self.dashWidget.show()
+2) In your code implement something like:
 
     # do actual plotting
     useCallbacks = True
@@ -682,6 +679,12 @@ class DashLinePlot:
         # last two clicked x values per graph, for the commonX readout
         self.clickedX = {}
 
+        # (xscale, xoffset) in force for each graph, so a selection box's
+        # raw edges -- which are plot positions, not recorded samples, and
+        # so carry no customdata of their own -- can be converted back to
+        # the values the data file actually held
+        self.graphXAxis = {}
+
     ##########################################
     def commonClickMessage(self, grID, xClicked):
         """
@@ -693,6 +696,15 @@ class DashLinePlot:
         graphs in a group may sample at different rates, and inventing a
         value between two samples would be a fiction.
 
+        xClicked is the plot position of the click -- scaled and offset the
+        same way the trace was drawn -- and is what nearestSample matches
+        against, since that is the space the trace's own x lives in. Every
+        value actually shown to the reader is the true, recorded one:
+        xClicked is converted back through this graph's (xscale, xoffset)
+        before display, and each trace's y is read from its customdata, not
+        its plotted y, since Scale/Offset on a yValue row are a display
+        convenience and must never appear in a value the reader reads off.
+
         Args:
             | grID (string): the graph this readout belongs to.
             | xClicked (float): x value of the click, on any graph of the group.
@@ -701,26 +713,29 @@ class DashLinePlot:
             | msg (string): the text for this graph's Click Data box.
 
         """
+        xscale, xoffset = self.graphXAxis.get(grID, (1.0, 0.0))
+        trueX = (xClicked - xoffset) / xscale if xscale else xClicked
+
         history = self.clickedX.setdefault(grID, [])
-        history.append(xClicked)
+        history.append(trueX)
         del history[:-2]
 
         lines = []
         if len(history) == 2:
             lines.append(f'Previous x: {history[0]:.6f}')
-        lines.append(f'Current  x: {xClicked:.6f}')
+        lines.append(f'Current  x: {trueX:.6f}')
         if len(history) == 2:
             lines.append(f'Range    x: {abs(history[1] - history[0]):.6f}')
 
-        for name, xs, ys, texts in self.graphTraces.get(grID, []):
+        for name, xs, customdata, texts in self.graphTraces.get(grID, []):
             index = nearestSample(xs, xClicked)
             if index is None:
                 continue
             if texts is not None and index < len(texts):
                 shown = str(texts[index])
             else:
-                value = list(ys)[index]
-                shown = 'n/a' if value is None else f'{float(value):.6f}'
+                value = customdata[index][1] if customdata is not None else None
+                shown = 'n/a' if value is None or pd.isna(value) else f'{float(value):.6f}'
             lines.append(f'  {name} = {shown}')
 
         return '\n'.join(lines)
@@ -736,6 +751,15 @@ class DashLinePlot:
         extent of its own data inside the shared x window, which is the
         useful quantity: what this signal did while that one did that.
 
+        xRange is the selection box's edges in plot position -- the same
+        scaled, offset space the traces are drawn in, since that is what a
+        rubber-band selection is measured in. It is converted back through
+        this graph's (xscale, xoffset) for display; the box itself backs no
+        recorded sample, so there is nothing else to convert it from. Each
+        trace's y extent is read from its customdata, not its plotted y,
+        since a yValue row's Scale/Offset are a display convenience and must
+        never appear in a value the reader reads off.
+
         Args:
             | grID (string): the graph this readout belongs to.
             | xRange (list): [x0, x1] of the selection, on any graph of the group.
@@ -744,11 +768,16 @@ class DashLinePlot:
             | msg (string): the text for this graph's selection box.
 
         """
-        x0, x1 = min(xRange), max(xRange)
-        lines = [f'Selected x: [{x0:.6f}, {x1:.6f}]',
-                 f'Width    x: {abs(x1 - x0):.6f}']
+        xscale, xoffset = self.graphXAxis.get(grID, (1.0, 0.0))
+        def toTrueX(value):
+            return (value - xoffset) / xscale if xscale else value
 
-        for name, xs, ys, texts in self.graphTraces.get(grID, []):
+        x0, x1 = min(xRange), max(xRange)
+        trueX0, trueX1 = toTrueX(x0), toTrueX(x1)
+        lines = [f'Selected x: [{trueX0:.6f}, {trueX1:.6f}]',
+                 f'Width    x: {abs(trueX1 - trueX0):.6f}']
+
+        for name, xs, customdata, texts in self.graphTraces.get(grID, []):
             values = np.asarray(xs, dtype=float)
             inWindow = (values >= x0) & (values <= x1)
             count = int(inWindow.sum())
@@ -766,7 +795,11 @@ class DashLinePlot:
                 lines.append(f'  {name}: {", ".join(seen)}  ({count} samples)')
                 continue
 
-            yValues = np.asarray([np.nan if v is None else v for v in ys],
+            if customdata is None:
+                lines.append(f'  {name}: no values in range')
+                continue
+            yValues = np.asarray([np.nan if row is None else row[1]
+                                  for row in customdata],
                                  dtype=float)[inWindow]
             if np.all(pd.isna(yValues)):
                 lines.append(f'  {name}: no values in range')
@@ -996,7 +1029,8 @@ class DashLinePlot:
                 dataref = row['Datafile'].strip()
 
             traceDf = self.datafiles[dataref]
-            traceX = traceDf[ctx['xvalue']] * ctx['xscale'] + ctx['xoffset']
+            rawX = traceDf[ctx['xvalue']]
+            traceX = rawX * ctx['xscale'] + ctx['xoffset']
 
             xlo, xhi = traceX.min(), traceX.max()
             xmin = xlo if xmin is None else min(xmin, xlo)
@@ -1025,13 +1059,27 @@ class DashLinePlot:
                 'marker': markerDict,   # we do not want markers but need them for the rectangle tool to appear
             }
 
+            # Scale and Offset are a display convenience, so graphs of very
+            # different magnitude can share one axis. They must never leak
+            # into a value the reader reads off: customdata carries the true
+            # x, and for a numeric trace the true y, straight from the data
+            # file, so the hover tooltip and the click/selection readouts
+            # always report what was recorded, never the scaled, shifted
+            # plot position. The hovertemplate for a numeric trace is
+            # completed further down, once the graph's y hoverformat
+            # (hfmt_y) is resolved.
             if traceCategories is not None:
                 # A state signal is piecewise constant: it holds a value, then
                 # jumps. A sloped line between two states would draw
                 # intermediate states that never existed.
                 dLines['line']['shape'] = 'hv'
                 dLines['text'] = hoverText
-                dLines['hovertemplate'] = '%{text}<extra></extra>'
+                dLines['customdata'] = np.asarray(rawX, dtype=float)
+                dLines['hovertemplate'] = (
+                    f'x=%{{customdata:{ctx["xformat"]}}}<br>%{{text}}<extra></extra>')
+            else:
+                dLines['customdata'] = np.column_stack([
+                    np.asarray(rawX, dtype=float), np.asarray(ySeries, dtype=float)])
 
             # fill in non-default values
             if not pd.isna(row['Linewidth']):
@@ -1114,6 +1162,17 @@ class DashLinePlot:
                     # add to plot set
                     thisGraphData.append(graphData[traceNum])
 
+                    # a numeric trace's hovertemplate could not be finished
+                    # where the trace was built, because the y hoverformat
+                    # (hfmt_y) belongs to the graph, not the trace: it comes
+                    # from this set's yLabel row. An enum trace already has
+                    # its own hovertemplate and is left alone.
+                    if 'hovertemplate' not in graphData[traceNum]:
+                        traceName = graphData[traceNum].get('name', '')
+                        graphData[traceNum]['hovertemplate'] = (
+                            f'x=%{{customdata[0]:{ctx["xformat"]}}}<br>'
+                            f'{traceName}=%{{customdata[1]:{hfmt_y}}}<extra></extra>')
+
                     # check for usage of markers
                     # at least one trace with markers will trigger the rectangle tool
                     # with associated Rectangle Tool Selection Data box
@@ -1128,7 +1187,10 @@ class DashLinePlot:
 
             # y axis: an enumeration set gets its codes relabelled with the
             # state names, so the reader sees 'Tracking' and not 1
-            yAxisDict = {'title': yLabel, 'hoverformat': hfmt_y}
+            # Plotly.js 4 requires an axis title as {'text': ...}: a bare
+            # string is accepted without error but renders as nothing at
+            # all, which is why the axis labels went missing.
+            yAxisDict = {'title': {'text': yLabel}, 'hoverformat': hfmt_y}
             if setCategories:
                 yAxisDict['tickmode'] = 'array'
                 yAxisDict['tickvals'] = list(range(len(setCategories)))
@@ -1137,7 +1199,7 @@ class DashLinePlot:
 
             # create dictionary with the layout and data
             figdict = {'layout':{'title': grTitle,
-                                'xaxis':{'title': ctx['xlabel'], 'hoverformat': ctx['xformat']},
+                                'xaxis':{'title': {'text': ctx['xlabel']}, 'hoverformat': ctx['xformat']},
                                 'yaxis':yAxisDict,
                                 'clickmode': 'event+select',
                                 'hovermode': 'x',           # set compare data on hover
@@ -1187,12 +1249,15 @@ class DashLinePlot:
             # decide which graphs share an x range
             rowClass = 'row graph-row common-x' if commonX else 'row graph-row'
 
-            # keep the traces so a click on any graph of a commonX group
-            # can report every graph's values at that x
+            # keep the traces so a click on any graph of a commonX group can
+            # report every graph's values at that x. customdata, not 'y',
+            # is what carries the true value: 'y' is the scaled, offset
+            # position the trace is drawn at.
             self.graphTraces[grID] = [
-                (trace.get('name', ''), trace['x'], trace['y'],
+                (trace.get('name', ''), trace['x'], trace.get('customdata'),
                  trace.get('text'))
                 for trace in thisGraphData]
+            self.graphXAxis[grID] = (ctx['xscale'], ctx['xoffset'])
 
             thisDivList.append(
                 html.Div(className=rowClass, children=[
@@ -1652,21 +1717,16 @@ class DashLinePlot:
             | None.
             
         """
-        # prepare for hover labels accross shared axes
-        #   * can only be done when doing subplots
-        #   * used the tricks from here
-        #        https://github.com/plotly/plotly.js/issues/2114#issuecomment-535259328
-        #  The main tricks are
-        #    1) dynamically get plot names
-        #    2) use visdcc.Runjs to reload the javasript on graph change, to reattach the event handler to 
-        #       the re-created plot. 
-        # 
-        # generate javascript strings to run in the render callback
-        # the plotid in this javascript string will be replaced with the graph id's
+        # Hover is now shared across every graph on the page, whether or not
+        # they are on a commonX tab, through assets/graphsync.js -- a plain
+        # Dash asset, served automatically, with no package dependency. This
+        # replaces an older Plotly-subplot-based mechanism that needed
+        # visdcc.Runjs to reattach its event handler on every re-render;
+        # both subplots and visdcc were removed along with it.
 
         # ----------------------------------------------------------------------------------------------
         # now define all the callback functions:
-            
+
         @dashApp.callback(
             [Output('tabs-content', 'children')],
             [Input('tabs','value')]
@@ -1674,12 +1734,11 @@ class DashLinePlot:
         def render_content(tab):
             tabNum = int(tab.split(' ')[1])
             return [divSets[tabNum]]
-    
-        # generate data clicked and selected callback functions for all possible graphs in the config
-        # i.e. subplots as well as individual graph sets
-        # must be able to handle changed config input from the user
-        # for gr in itertools.chain(allTabs,allGraphs):
-        for gr in itertools.chain(graphList):
+
+        # generate data clicked and selected callback functions for every
+        # graph actually placed on the page -- graphList, flattened, since
+        # it is a list of per-tab lists of graph ids
+        for gr in itertools.chain(*graphList):
             theGraph = str(gr)
 
             # initialise the clicked data storage
@@ -1842,9 +1901,21 @@ class DashLinePlot:
                 def display_click_data(clickData, graphId):
                     msg = 'none clicked'
                     if clickData:
-                        # get clicked data
-                        x = clickData['points'][0]['x']
-                        y = clickData['points'][0]['y']
+                        # 'x'/'y' on the point are the scaled, offset plot
+                        # position; 'customdata' carries the true values, as
+                        # set on the trace for exactly this reason -- a
+                        # numeric trace's customdata is [trueX, trueY], an
+                        # enum trace's is trueX alone (its y was never
+                        # scaled to begin with, so its plotted code is
+                        # already what it is).
+                        point = clickData['points'][0]
+                        customdata = point.get('customdata')
+                        if isinstance(customdata, (list, tuple)) and len(customdata) == 2:
+                            x, y = float(customdata[0]), float(customdata[1])
+                        elif customdata is not None:
+                            x, y = float(customdata), point['y']
+                        else:
+                            x, y = point['x'], point['y']
 
                         # Index of new click data
                         index = self.clickedData[graphId][0]
@@ -1905,31 +1976,18 @@ class DashLinePlot:
                 Output('select-'+theGraph, 'children'), # display box id and children
                 [Input(theGraph, 'selectedData')]   # graph id and selectedData
             )
-            def display_selected_data(selectedData):
-
-                msg = 'none selected'
-
+            def display_selected_data(selectedData, _self=theGraph):
+                # The selection box's y corners are a single plot-position
+                # pair, but each trace on this graph may carry its own
+                # Scale/Offset -- there is no one true value they all
+                # convert to. commonSelectMessage already solves exactly
+                # this by reporting each trace's own true y extent inside
+                # the shared x window; reuse it here rather than reporting
+                # the box's raw, possibly-scaled corners.
                 bounds = selectionBounds(selectedData)
-
-                if bounds is not None:
-
-                    xRange, yRange = bounds
-
-                    xleft = xRange[0]
-                    xright = xRange[1]
-                    dx = abs(xright - xleft)
-
-                    ytop = yRange[1]
-                    ybottom = yRange[0]
-                    dy = abs(ybottom - ytop)
-                    
-                    msg = (
-                        f'Top left [x, y]: [{xleft:.6f}, {ytop:.6f}]\n'  
-                        f'Bottom right [x, y]: [{xright:.6f}, {ybottom:.6f}]\n'  
-                        f'Range in [x, y]: [{dx:.6f}, {dy:.6f}]' 
-                    )
-
-                return msg 
+                if bounds is None:
+                    return 'none selected'
+                return self.commonSelectMessage(_self, bounds[0]) 
 
         # # time slider callback for each tab - display selected values of the slider
         # for gr in allTabs:
