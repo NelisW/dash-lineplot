@@ -331,6 +331,42 @@ def traceYExtent(traces):
     return lo, hi
 
 ################################################################
+def cellFloat(value, default):
+    """A numeric cell, or the default when blank or not a number."""
+    if pd.isna(value) or str(value).strip() == '':
+        return default
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+################################################################
+def cellText(value, default=''):
+    """A text cell, or the default when blank."""
+    if pd.isna(value):
+        return default
+    
+    # Clean up whitespace padding
+    text_val = str(value).strip()
+    return text_val if text_val != '' else default
+
+################################################################
+def cellFlag(value, default):
+    """A boolean cell: TRUE/FALSE, 1/0, yes/no, or blank for the default."""
+    if pd.isna(value) or str(value).strip() == '':
+        return default
+    
+    # Normalize to string for comparison
+    normalized = str(value).strip().lower()
+    
+    if normalized in ('true', '1', 'yes', 'y', 't'):
+        return True
+    if normalized in ('false', '0', 'no', 'n', 'f'):
+        return False
+        
+    return default
+
+################################################################
 def resolveSetContexts(dft):
     """
     The settings in force for each graph on a sheet.
@@ -352,29 +388,43 @@ def resolveSetContexts(dft):
           datafile, xvalue, xlabel, xformat, xscale, xoffset and height.
 
     """
-    current = {'datafile': None, 'xvalue': None, 'xlabel': '', 'xformat': '.4f',
-               'xscale': 1.0, 'xoffset': 0.0, 'height': 300}
+    # Define the baseline state
+    current = {
+        'datafile': None, 'xvalue': None, 'xlabel': '', 
+        'xformat': '.4f', 'xscale': 1.0, 'xoffset': 0.0, 'height': 300
+    }
     contexts = {}
     setNumber = -1
 
+    # Map variables to their data extraction rules
+    # Format: 'Variable': lambda row, curr: { key_to_update: clean_value, ... }
+    variable_handlers = {
+        'Height': lambda r, c: {
+            'height': cellFloat(r['Value'], c['height'])
+        },
+        'Datafile': lambda r, c: {
+            'datafile': cellText(r['Value'], c['datafile'])
+        },
+        'xLabel': lambda r, c: {
+            'xlabel': cellText(r['Value'], c['xlabel']),
+            'xformat': cellText(r['Format'], '.4f') if cellText(r['Format']) else '.4f'
+        },
+        'xValue': lambda r, c: {
+            'xvalue': cellText(r['Value'], c['xvalue']),
+            'xscale': cellFloat(r['Scale'], 1.0),
+            'xoffset': cellFloat(r['Offset'], 0.0)
+        }
+    }
+
+    # Iterate and apply updates dynamically
     for _, row in dft.iterrows():
         variable = row['Variable']
-
-        if variable == 'Height':
-            current['height'] = row['Value']
-        elif variable == 'Datafile':
-            current['datafile'] = row['Value']
-        elif variable == 'xLabel':
-            current['xlabel'] = row['Value']
-            current['xformat'] = row['Format'] if isinstance(row['Format'], str) else '.4f'
-        elif variable == 'xValue':
-            current['xvalue'] = row['Value']
-            # Scale and Offset ride on the xValue row, so they belong to the
-            # block that row opened, not to the sheet
-            current['xscale'] = (float(row['Scale'])
-                                 if not np.isnan(row['Scale']) else 1.0)
-            current['xoffset'] = (float(row['Offset'])
-                                  if not np.isnan(row['Offset']) else 0.0)
+        
+        if variable in variable_handlers:
+            # Execute the handler and merge the resulting dict into 'current'
+            updates = variable_handlers[variable](row, current)
+            current.update(updates)
+            
         elif variable == 'Title':
             setNumber += 1
             contexts[f'{setNumber:03d}'] = dict(current)
@@ -860,7 +910,7 @@ class DashLinePlot():
         # graphs to disk requested?
         toDisk = True
         if 'ToDisk' in dft.index:
-            if not np.isnan(dft[(dft['Variable']=='ToDisk')]['Value'].values[0]):
+            if not pd.isna(dft[(dft['Variable']=='ToDisk')]['Value'].values[0]):
                 toDisk = dft[(dft['Variable']=='ToDisk')]['Value'].values[0]
 
         # commonX ties every graph on this tab to one x scale: zooming or
@@ -905,14 +955,14 @@ class DashLinePlot():
 
             # y scale
             if 'Scale' in row:
-                if not np.isnan(row['Scale']):
+                if not pd.isna(row['Scale']):
                     yscale = row['Scale']
                 else:
                     yscale = 1.0
 
             # y offset
             if 'Offset' in row:
-                if not np.isnan(row['Offset']):
+                if not pd.isna(row['Offset']):
                     yoffset = row['Offset']
                 else:
                     yoffset = 0.
@@ -926,7 +976,7 @@ class DashLinePlot():
 
             opacity = 0
             if 'MarkerOpacity' in row:
-                if not np.isnan(row['MarkerOpacity']):
+                if not pd.isna(row['MarkerOpacity']):
                     opacity = row['MarkerOpacity']
                     
             markerDict = { 'opacity': opacity }
@@ -987,7 +1037,7 @@ class DashLinePlot():
                 dLines['hovertemplate'] = '%{text}<extra></extra>'
 
             # fill in non-default values
-            if not np.isnan(row['Linewidth']):
+            if not pd.isna(row['Linewidth']):
                 dLines['line']['width'] = row['Linewidth']
 
             if isinstance(row['Colour'], str):
@@ -1258,7 +1308,7 @@ class DashLinePlot():
             # First check exclude flag
             toInclude = True
             if 'Include' in dft.index:
-                if not np.isnan(dft[(dft['Variable']=='Include')]['Value'].values[0]):
+                if not pd.isna(dft[(dft['Variable']=='Include')]['Value'].values[0]):
                     toInclude = dft[(dft['Variable']=='Include')]['Value'].values[0]
             
             # collect data and build the data for the sheet
@@ -1373,14 +1423,16 @@ class DashLinePlot():
         # header dataframe, i.e the data on the 'header' tab in the xlsx file
         global dfPlotterHeader
         dfPlotterHeader = dfHeader.set_index('Variable')
-        masterDataFile =  dfPlotterHeader.loc['Datafile','Value']
 
+        # Extract master datafile, defaulting to empty string if missing
+        masterDataFile = cellText(dfPlotterHeader.loc['Datafile', 'Value'] if 'Datafile' in dfPlotterHeader.index else '')
+ 
         # page density: 'compact' packs the widgets together, 'comfortable'
         # restores the original roomier spacing. Compact is the default.
         global pageDensity
         pageDensity = 'compact'
         if 'Density' in dfPlotterHeader.index:
-            requested = str(dfPlotterHeader.loc['Density','Value']).strip().lower()
+            requested = cellText(dfPlotterHeader.loc['Density', 'Value']).lower()
             if requested in ('compact', 'comfortable'):
                 pageDensity = requested
             else:
@@ -1393,35 +1445,42 @@ class DashLinePlot():
 
         for shtnum,(sheetname,dft) in enumerate(sheets.items()):
             dft = dft.copy()
+
             # add info to identify the lines associated with this sheet
             dft['Graph'] = sheetname
             dft['ShtNum'] = shtnum
-            dft['Index'] = dft['Variable']
+            dft['Index'] = dft['Variable'].apply(lambda x: cellText(x))
 
             # Check the file to be used and
             # determine the number of graphs on this tab
             i = 0
             theSet = -1
             for index,row in dft.iterrows():
-                if 'Datafile' in row['Variable']:
-                    if dft.loc[index,'Value'] == 'master':
-                        dft.loc[index,'Value'] = masterDataFile
+
+                var_name = cellText(row.get('Variable'))
+                val_raw = row.get('Value') # Keep raw for helper parsing
+
+                # Resolve Master Datafile references globally per sheet
+                if 'Datafile' in var_name and cellText(val_raw) == 'master':
+                    dft.loc[index, 'Value'] = masterDataFile
+
                 # a yValue row may name its own data file in the Datafile
                 # column, which is how one tab carries several sample rates
                 if dft.loc[index,'Datafile'] == 'master':
                     dft.loc[index,'Datafile'] = masterDataFile
-                if 'Title' in row['Variable']:
+                if 'Title' in var_name:
                     theSet = theSet + 1
-                    dft.loc[index,'Index'] = f"{row['Variable']}#{theSet:03d}"
-                if 'yLabel' in row['Variable']:
-                    dft.loc[index,'Index'] = f"{row['Variable']}#{theSet:03d}"
+                    dft.loc[index,'Index'] = f"{var_name}#{theSet:03d}"
+                if 'yLabel' in var_name:
+                    dft.loc[index,'Index'] = f"{var_name}#{theSet:03d}"
                     i = 0
-                if 'yValue' in row['Variable']:
-                    dft.loc[index,'Index'] = f"{row['Variable']}#{theSet:03d}-{i:03d}"
+                if 'yValue' in var_name:
+                    dft.loc[index,'Index'] = f"{var_name}#{theSet:03d}-{i:03d}"
                     i = i + 1
 
             # make 'Index' column the index
             dft = dft.set_index('Index')
+
             # append this sheet to the master data frame
             dfPlotterConfig = pd.concat([dfPlotterConfig, dft])
 
@@ -1521,7 +1580,7 @@ class DashLinePlot():
             if os.path.isfile(datapath):
 
                 # determine what type of file is this by looking at the file extension
-                extension = os.path.splitext(datapath)[1]
+                extension = os.path.splitext(datapath)[1].lower()
 
                 # Excel data files
                 # top row is data column names
