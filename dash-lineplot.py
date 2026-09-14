@@ -105,11 +105,11 @@ To use as a module in another application:
     self.dashWidget.show()
 
     # do actual plotting
-    useCallBacks = True
+    useCallbacks = True
     plotConfig = './dash-config.xlsx'
     port = '8050' 
     dashlineplotter = DashLinePlot()
-    dashlineplotter.runPlotter(port, plotConfig, useCallBacks)
+    dashlineplotter.runPlotter(port, plotConfig, useCallbacks)
 
 Notes from https://dash.plot.ly/getting-started:
 * The layout is composed of a tree of "components" like html.Div and dcc.Graph.
@@ -185,7 +185,7 @@ __author__='CJ & MS Willers'
 import sys
 import os
 import json
-import math
+
 import threading
 import pandas as pd
 import openpyxl as oxl
@@ -202,10 +202,7 @@ from dash import html
 from dash import Patch
 from dash.dependencies import Input, Output, State
 
-from plotly import subplots
 import plotly.offline as offline
-
-external_stylesheets = ['assets/bWLwgP.css']
 
 pd.set_option('display.max_rows', 500)
 
@@ -224,6 +221,9 @@ def resourcePath(relative_path):
         base_path = Path(".").resolve()
 
     return Path(base_path) / relative_path
+
+
+external_stylesheets = [str(resourcePath('assets/bWLwgP.css'))]
 
 ################################################################
 # Columns a graph sheet may carry. Any sheet is reindexed onto these so that
@@ -499,6 +499,16 @@ def nearestSample(xs, x):
     if values.size == 0:
         return None
     return int(np.abs(values - x).argmin())
+
+# look at this - Faster alternative for sorted data:
+# import bisect
+# def nearestSample_sorted(xs, x):
+#     arr = np.asarray(xs, dtype=float)
+#     idx = min(bisect.bisect_left(arr, x), len(arr) - 1)
+#     # Also check left neighbor for edge cases
+#     if idx > 0 and abs(arr[idx-1] - x) <= abs(arr[idx] - x):
+#         return idx - 1
+#     return idx
 
 ################################################################
 def isEnumSeries(series):
@@ -1905,75 +1915,75 @@ class DashLinePlot:
 
                     xRange, yRange = bounds
 
-                    x1eft = xRange[0]
+                    xleft = xRange[0]
                     xright = xRange[1]
-                    dx = abs(xright - x1eft)
+                    dx = abs(xright - xleft)
 
                     ytop = yRange[1]
                     ybottom = yRange[0]
                     dy = abs(ybottom - ytop)
                     
                     msg = (
-                        f'Top left [x, y]: [{x1eft:.6f}, {ytop:.6f}]\n'  
+                        f'Top left [x, y]: [{xleft:.6f}, {ytop:.6f}]\n'  
                         f'Bottom right [x, y]: [{xright:.6f}, {ybottom:.6f}]\n'  
                         f'Range in [x, y]: [{dx:.6f}, {dy:.6f}]' 
                     )
 
                 return msg 
 
-        # time slider callback for each tab - display selected values of the slider
-        for gr in allTabs:
-            theGraph = str(gr)
+        # # time slider callback for each tab - display selected values of the slider
+        # for gr in allTabs:
+        #     theGraph = str(gr)
 
-            @dashApp.callback(
-                Output('output-container-xSlider-'+ theGraph, 'children'),
-                [Input('xSlider-'+theGraph, 'value'),
-                 Input('submit-button-'+theGraph, 'n_clicks'), 
-                ],    
-                [State('tabs', 'value'),
-                 State('minVal-'+theGraph, 'value'), State('maxVal-'+theGraph, 'value'),
-                ]             
-            )
-            def process_xSlider_data(value, nclicks, tab, mini, maxi):
-                # tab number in the current page layout
-                tabNum = int(tab.split(' ')[1])
-                graphSetName = 'graph-'+graphTabs[tabNum]
-                # select the graph data
-                dft = dfPlotterConfig[(dfPlotterConfig['Graph']==graphSetName)] 
-                # determine which input triggered the callback
-                ctx = dash.callback_context
-                clicked_id = ctx.triggered[0]['prop_id'].split('.')[0]
-                # Get slider limits from input fields
-                if 'submit' in clicked_id:
-                    start = mini
-                    if start < sliderMinValues[tabNum]:
-                        start = sliderMinValues[tabNum]
-                    end = maxi
-                    if end > sliderMaxValues[tabNum]:
-                        end = sliderMaxValues[tabNum] 
-                    value[0] = start
-                    value[1] = end
+        #     @dashApp.callback(
+        #         Output('output-container-xSlider-'+ theGraph, 'children'),
+        #         [Input('xSlider-'+theGraph, 'value'),
+        #          Input('submit-button-'+theGraph, 'n_clicks'), 
+        #         ],    
+        #         [State('tabs', 'value'),
+        #          State('minVal-'+theGraph, 'value'), State('maxVal-'+theGraph, 'value'),
+        #         ]             
+        #     )
+        #     def process_xSlider_data(value, nclicks, tab, mini, maxi):
+        #         # tab number in the current page layout
+        #         tabNum = int(tab.split(' ')[1])
+        #         graphSetName = 'graph-'+graphTabs[tabNum]
+        #         # select the graph data
+        #         dft = dfPlotterConfig[(dfPlotterConfig['Graph']==graphSetName)] 
+        #         # determine which input triggered the callback
+        #         ctx = dash.callback_context
+        #         clicked_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        #         # Get slider limits from input fields
+        #         if 'submit' in clicked_id:
+        #             start = mini
+        #             if start < sliderMinValues[tabNum]:
+        #                 start = sliderMinValues[tabNum]
+        #             end = maxi
+        #             if end > sliderMaxValues[tabNum]:
+        #                 end = sliderMaxValues[tabNum] 
+        #             value[0] = start
+        #             value[1] = end
 
-                # update the graph set
-                global divSets
-                divSets[tabNum], _, _, _ = self.makeGraphSet(dft, graphSetName) 
-                msg = f'Selected range [{value[0]:.6f}, {value[1]:.6f}]'
-                return msg
+        #         # update the graph set
+        #         global divSets
+        #         divSets[tabNum], _, _, _ = self.makeGraphSet(dft, graphSetName) 
+        #         msg = f'Selected range [{value[0]:.6f}, {value[1]:.6f}]'
+        #         return msg
             
-            @dashApp.callback(
-                [Output('xSlider-'+theGraph, 'value'), 
-                 Output('minVal-'+theGraph, 'value'), 
-                 Output('maxVal-'+theGraph, 'value'), 
-                ],
-                [Input('resetSlider-'+theGraph, 'n_clicks')],
-                [State('tabs', 'value')] 
-            )
-            def reset_xSlider(nclicks, tab):
-                tabNum = int(tab.split(' ')[1])
-                low = sliderMinValues[tabNum]
-                hi = sliderMaxValues[tabNum]
-                limit = [low, hi]
-                return limit, '', ''
+        #     @dashApp.callback(
+        #         [Output('xSlider-'+theGraph, 'value'), 
+        #          Output('minVal-'+theGraph, 'value'), 
+        #          Output('maxVal-'+theGraph, 'value'), 
+        #         ],
+        #         [Input('resetSlider-'+theGraph, 'n_clicks')],
+        #         [State('tabs', 'value')] 
+        #     )
+        #     def reset_xSlider(nclicks, tab):
+        #         tabNum = int(tab.split(' ')[1])
+        #         low = sliderMinValues[tabNum]
+        #         hi = sliderMaxValues[tabNum]
+        #         limit = [low, hi]
+        #         return limit, '', ''
 
     ##########################################
     def runPlotter(self, port, configfile, cback = True, flaskServerRunning=False,
