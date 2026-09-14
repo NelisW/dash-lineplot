@@ -180,10 +180,10 @@ Div(
     )
     
 """
-__version__= '$Revision: 4633 $'
 __author__='CJ & MS Willers'
 
-import sys, os
+import sys
+import os
 import json
 import math
 import threading
@@ -192,13 +192,18 @@ import openpyxl as oxl
 import numpy as np
 import datetime
 import itertools
+import base64
+import re
+from pathlib import Path
 
 import dash
 from dash import dcc
 from dash import html
 from dash import Patch
 from dash.dependencies import Input, Output, State
+
 from plotly import subplots
+import plotly.offline as offline
 
 external_stylesheets = ['assets/bWLwgP.css']
 
@@ -206,19 +211,19 @@ pd.set_option('display.max_rows', 500)
 
 # https://stackoverflow.com/questions/55596932/how-can-i-include-assets-of-a-dash-app-into-an-exe-file-created-with-pyinstaller
 # when packaging the app with pyInstaller the assets folder is not included correctly
-# defining resource_path as below and using
-#     dash.Dash(__name__, assets_folder=resource_path('assets'))
+# defining resourcePath as below and using
+#     dash.Dash(__name__, assets_folder=resourcePath('assets'))
 # solves the problem 
-def resource_path(relative_path):
+def resourcePath(relative_path):
 
 # get absolute path to resource
     try:
         # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
-        base_path = os.path.abspath(".")
+        base_path = Path(".").resolve()
 
-    return os.path.join(base_path, relative_path)
+    return Path(base_path) / relative_path
 
 ################################################################
 # Columns a graph sheet may carry. Any sheet is reindexed onto these so that
@@ -292,7 +297,7 @@ def readJsonData(path, group):
             raise ValueError(
                 f"{path} holds named groups, so the configuration must say "
                 f"which one to plot by appending a fragment to the Datafile "
-                f"value, as in '{os.path.basename(path)}#<group>'. "
+                f"value, as in '{Path(path).name}#<group>'. "
                 f"Groups present: {available}.")
         if group not in content:
             raise ValueError(
@@ -323,7 +328,7 @@ def traceYExtent(traces):
     for trace in traces:
         values = np.asarray([np.nan if v is None else v for v in trace['y']],
                             dtype=float)
-        if values.size == 0 or np.all(np.isnan(values)):
+        if values.size == 0 or np.all(pd.isna(values)):
             continue
         low, high = float(np.nanmin(values)), float(np.nanmax(values))
         lo = low if lo is None else min(lo, low)
@@ -508,7 +513,7 @@ def isEnumSeries(series):
         | series (Series): the data column.
 
     Returns:
-        | (bolean): True for an enumeration column.
+        | (bool): True for an enumeration column.
 
     """
     return not (pd.api.types.is_numeric_dtype(series) or
@@ -560,7 +565,7 @@ def enumCategories(series, declared=None):
     """
     categories = list(declared) if declared else []
     for value in series:
-        if value is None or (isinstance(value, float) and math.isnan(value)):
+        if value is None or (isinstance(value, float) and pd.isna(value)):
             continue
         name = str(value)
         if name not in categories:
@@ -576,10 +581,10 @@ def isJsonConfig(configfile):
         | configfile (string): configuration filename.
 
     Returns:
-        | (bolean): True for a .json configuration.
+        | (bool): True for a .json configuration.
 
     """
-    return os.path.splitext(configfile)[1].lower() == '.json'
+    return Path(configfile).suffix.lower() == '.json'
 
 ################################################################
 def readConfigTables(configfile):
@@ -645,7 +650,7 @@ def readPageTitle(configfile):
     return default
 
 ################################################################
-class DashLinePlot():
+class DashLinePlot:
 
     def __init__(self):
         """
@@ -753,7 +758,7 @@ class DashLinePlot():
 
             yValues = np.asarray([np.nan if v is None else v for v in ys],
                                  dtype=float)[inWindow]
-            if np.all(np.isnan(yValues)):
+            if np.all(pd.isna(yValues)):
                 lines.append(f'  {name}: no values in range')
                 continue
             lines.append(f'  {name}: y in [{np.nanmin(yValues):.6f}, '
@@ -762,7 +767,7 @@ class DashLinePlot():
         return '\n'.join(lines)
 
     ##########################################
-    def generateFeedbackBoxes(self, id, isMarkers, xmin=None, xmax=None,
+    def generateFeedbackBoxes(self, graphId, isMarkers, xmin=None, xmax=None,
                               ymin=None, ymax=None):
         """
         Builds the column beside a graph: x-range entry and the readout boxes
@@ -774,8 +779,8 @@ class DashLinePlot():
         only ever the means.
 
         Args:
-            | id (string): id string.
-            | isMarkers (bolean): whether any line carries markers, which is
+            | graphId (string): id string.
+            | isMarkers (bool): whether any line carries markers, which is
                              what makes a selection possible at all.
             | xmin (double): smallest x in the data, shown as a placeholder.
             | xmax (double): largest x in the data, shown as a placeholder.
@@ -802,7 +807,7 @@ class DashLinePlot():
         clickDiv = html.Div(
                         [
                             dcc.Markdown(""" **Click Data** """),
-                            html.Pre(id='click-'+ id, style=boxStyle),
+                            html.Pre(id='click-'+ graphId, style=boxStyle),
                         ],
                         className='feedback-box'
                     )
@@ -810,7 +815,7 @@ class DashLinePlot():
         rectangleDiv =  html.Div(
                             [
                                 dcc.Markdown(""" **Rectangle Tool Selection Data** """),
-                                html.Pre(id='select-'+ id, style=boxStyle),
+                                html.Pre(id='select-'+ graphId, style=boxStyle),
                             ],
                             className='feedback-box'
                         )
@@ -829,22 +834,22 @@ class DashLinePlot():
         xrangeDiv = html.Div(
                         [
                             dcc.Markdown(""" **X range** """),
-                            dcc.Input(id='xstart-' + id, type='text', inputMode='decimal',
+                            dcc.Input(id='xstart-' + graphId, type='text', inputMode='decimal',
                                       placeholder=bound(xmin),
                                       className='xrange-input'),
-                            dcc.Input(id='xend-' + id, type='text', inputMode='decimal',
+                            dcc.Input(id='xend-' + graphId, type='text', inputMode='decimal',
                                       placeholder=bound(xmax),
                                       className='xrange-input'),
                             dcc.Markdown(""" **Y range** """),
-                            dcc.Input(id='ystart-' + id, type='text', inputMode='decimal',
+                            dcc.Input(id='ystart-' + graphId, type='text', inputMode='decimal',
                                       placeholder=bound(ymin),
                                       className='xrange-input'),
-                            dcc.Input(id='yend-' + id, type='text', inputMode='decimal',
+                            dcc.Input(id='yend-' + graphId, type='text', inputMode='decimal',
                                       placeholder=bound(ymax),
                                       className='xrange-input'),
-                            html.Button('Apply', id='xapply-' + id,
+                            html.Button('Apply', id='xapply-' + graphId,
                                         className='xrange-button'),
-                            html.Button('Reset', id='xreset-' + id,
+                            html.Button('Reset', id='xreset-' + graphId,
                                         className='xrange-button'),
                         ],
                         className='feedback-box xrange-box'
@@ -870,22 +875,19 @@ class DashLinePlot():
 
         """
         # Save the figure to disk as html
-        import plotly.offline as offline
         offline.plot(figdict,
             auto_open=False, 
             output_type='file', filename=f'{fbasename}.html', validate=False)
 
 
     ##########################################
-    def makeGraphSet(self, dft, graph, reqStart = 0, reqEnd = 0):
+    def makeGraphSet(self, dft, graph):
         """
         Builds the set of graphs on this tab (requested from one sheet in xls) 
 
         Args:
             | dft (pd.dataframe): info for this graph set.
             | graph (string): graph set name, i.e. text following "graph-" in the sheet name.
-            | reqStart (double): starting x-value, default the beginning.
-            | reqEnd (double): ending x-value, default the end. 
 
         Returns:
             | thisDivList (list): list of html Divs.
@@ -904,7 +906,7 @@ class DashLinePlot():
         
         # create graphs output folder if not exist
         grDir = './graphs'
-        if not os.path.exists(grDir):
+        if not Path(grDir).exists():
             os.mkdir(grDir)
 
         # graphs to disk requested?
@@ -952,32 +954,19 @@ class DashLinePlot():
             yVariableList.append(index)
 
             # y scale
-            if 'Scale' in row:
-                if not pd.isna(row['Scale']):
-                    yscale = row['Scale']
-                else:
-                    yscale = 1.0
+            yscale = cellFloat(row.get('Scale'), 1.0)
 
             # y offset
-            if 'Offset' in row:
-                if not pd.isna(row['Offset']):
-                    yoffset = row['Offset']
-                else:
-                    yoffset = 0.
+            yoffset = cellFloat(row.get('Offset'), 0.0)
                     
             # each line in each graph must be a dict as follows:
-            plotMode = 'lines'
-            if 'Mode' in row:
-                #  a sting and not empty
-                if isinstance(row['Mode'], str) and not row['Mode'] == "":
-                    plotMode = row['Mode']
+            plotMode = cellText(row.get('Mode'), 'lines') if 'Mode' in row else 'lines'
 
-            opacity = 0
-            if 'MarkerOpacity' in row:
-                if not pd.isna(row['MarkerOpacity']):
-                    opacity = row['MarkerOpacity']
-                    
-            markerDict = { 'opacity': opacity }
+            # marker opacity and dictionary
+            opacity = cellFloat(row.get('MarkerOpacity'), 0.0)
+            markerDict = {
+                'opacity': opacity
+            }
 
             # An enumeration column holds state names and cannot be plotted as
             # a number. Map it onto integer codes and keep the labels, so the
@@ -1227,11 +1216,10 @@ class DashLinePlot():
         ) 
 
         # 7) Div with license logos
-        import base64
         encoded_image = base64.b64encode(open('icons/logoSet2long.png', 'rb').read())
         thisDivList.append(
             html.Div([
-                        html.Img(src='data:image/png;base64,{}'.format(encoded_image.decode()),
+                        html.Img(src=f'data:image/png;base64,{encoded_image.decode()}',
                         height=50)
                     ], 
                     style = {'text-align':'right'}
@@ -1280,9 +1268,8 @@ class DashLinePlot():
         
         # make a list of all possible graph tabs and graphs sets in dataframe dfg
         # to be used in generating all possible callbacks
-        global allTabs, allTabUsedIdx
+        global allTabs
         allTabs = dfPlotterConfig['Graph'].unique()
-        allTabUsedIdx = [-1] * len(allTabs)
 
         global allGraphs
         allGraphs = []
@@ -1309,7 +1296,6 @@ class DashLinePlot():
             
             # collect data and build the data for the sheet
             if toInclude:
-                allTabUsedIdx[i] = tabIndex
                 tabIndex = tabIndex + 1
 
                 divSet, grList, xmin, xmax = self.makeGraphSet(dft, graphTab)
@@ -1497,9 +1483,6 @@ class DashLinePlot():
             | dfData (pandas.DataFrame): dataframe with loaded data.
         
         """
-
-        import re
-
         header_line = None
         skip_count = 0
 
@@ -1540,7 +1523,7 @@ class DashLinePlot():
                              against, or None to use the working directory.
 
         Returns:
-            | success (bolean): True if the file load was successful.
+            | success (bool): True if the file load was successful.
 
         """
 
@@ -1570,13 +1553,13 @@ class DashLinePlot():
             filepart, group = splitDataRef(datafilename)
 
             datapath = filepart
-            if datadir is not None and not os.path.isabs(filepart):
-                datapath = os.path.join(datadir, filepart)
+            if datadir is not None and not Path(filepart).is_absolute():
+                datapath = Path(datadir) / filepart
 
-            if os.path.isfile(datapath):
+            if Path(datapath).is_file():
 
                 # determine what type of file is this by looking at the file extension
-                extension = os.path.splitext(datapath)[1].lower()
+                extension = Path(datapath).suffix.lower()
 
                 # Excel data files
                 # top row is data column names
@@ -1603,7 +1586,7 @@ class DashLinePlot():
 
     ##########################################
     #
-    def run_dash(self, pageLayout, port, pagetitle=None):
+    def runDash(self, pageLayout, port, pagetitle=None):
         """
         Initiate the Dash server and serve the page
 
@@ -1623,7 +1606,7 @@ class DashLinePlot():
         # this must be global to stay in scope in applications that use the plotter as a module
         global dashApp
         dashApp = dash.Dash(__name__, 
-                            assets_folder=resource_path('assets'),
+                            assets_folder=resourcePath('assets'),
                             title=pagetitle if pagetitle else 'Dash')
 
         # override security restrictions: allow the serving of local pages
@@ -1670,50 +1653,9 @@ class DashLinePlot():
         # 
         # generate javascript strings to run in the render callback
         # the plotid in this javascript string will be replaced with the graph id's
-        JS_STR_template = '''
-
-            var plotid = 'theplotname'
-            var plot = document.getElementById(plotid)
-
-            plot.on(
-            'plotly_hover',
-            function (eventdata) {
-                Plotly.Fx.hover(
-                plotid,
-                { xval: eventdata.xvals[0] },
-                Object.keys(plot._fullLayout._plots) // ["xy", "xy2", ...]
-                );
-            });
-            '''
-            
-        jsString = []
-        for gr in allTabs:
-            theGraph = str(gr)
-            gr_js = JS_STR_template.replace('theplotname',theGraph)
-            jsString.append(gr_js)
 
         # ----------------------------------------------------------------------------------------------
         # now define all the callback functions:
-
-        # It seems that with the latest python modules, the visdcc module is not compatibl any more
-        # We need to solve this issue
-        # For the time being the subplot functionality will be disabled
-        # callback used for rendering of tabs
-        # @dashApp.callback(
-        #     [Output('tabs-content', 'children'),
-        #     Output('hover-js', 'run'),  # <-- add this to get hover on all subplot traces
-        #     ],
-        #     [Input('tabs','value')]
-        #     # INPUTS
-        # )
-        # def render_content(tab):
-        # # def render_content(tab, *args):
-        #     tabNum = int(tab.split(' ')[1])
-        #     # get the correct tab number for the js_str in complete list
-        #     jsIndex = allTabUsedIdx.index(tabNum)
-        #     js_str = jsString[jsIndex]
-        #     print(f'js_string = {js_str}\n')
-        #     return [divSets[tabNum]], js_str
             
         @dashApp.callback(
             [Output('tabs-content', 'children')],
@@ -1883,45 +1825,45 @@ class DashLinePlot():
             else:
 
                 @dashApp.callback(
-                  Output('click-'+theGraph, 'children'), # display box id and children
-                  [Input(theGraph, 'clickData')],   # graph id and clickdata
-                  [State(theGraph,'id')]
+                    Output('click-'+theGraph, 'children'), # display box id and children
+                    [Input(theGraph, 'clickData')],   # graph id and clickdata
+                    [State(theGraph,'id')]
                 )
-                def display_click_data(clickData, id):
-                  msg = 'none clicked'
-                  if clickData:
-                      # get clicked data
-                      x = clickData['points'][0]['x']
-                      y = clickData['points'][0]['y']
+                def display_click_data(clickData, graphId):
+                    msg = 'none clicked'
+                    if clickData:
+                        # get clicked data
+                        x = clickData['points'][0]['x']
+                        y = clickData['points'][0]['y']
 
-                      # Index of new click data
-                      index = self.clickedData[id][0]
+                        # Index of new click data
+                        index = self.clickedData[graphId][0]
 
-                      # store the new data here
-                      self.clickedData[id][index][0] = x
-                      self.clickedData[id][index][1] = y
+                        # store the new data here
+                        self.clickedData[graphId][index][0] = x
+                        self.clickedData[graphId][index][1] = y
 
-                      # Calc the delta and set the index to be valid for next click
+                        # Calc the delta and set the index to be valid for next click
                     
-                      indCur = index
-                      if index == 1:
-                          index = 2
-                      else:
-                          index = 1
-                      indexPrev = index
-                      self.clickedData[id][0] = index
+                        indCur = index
+                        if index == 1:
+                            index = 2
+                        else:
+                            index = 1
+                        indexPrev = index
+                        self.clickedData[graphId][0] = index
 
-                      # calc delta
-                      self.clickedData[id][3][0] = abs(self.clickedData[id][indCur][0] - self.clickedData[id][indexPrev][0])
-                      self.clickedData[id][3][1] = abs(self.clickedData[id][indCur][1] - self.clickedData[id][indexPrev][1])
+                        # calc delta
+                        self.clickedData[graphId][3][0] = abs(self.clickedData[graphId][indCur][0] - self.clickedData[graphId][indexPrev][0])
+                        self.clickedData[graphId][3][1] = abs(self.clickedData[graphId][indCur][1] - self.clickedData[graphId][indexPrev][1])
 
-                      msg =  (
-                              f'Previous [x, y]: [{self.clickedData[id][indexPrev][0]:.6f}, {self.clickedData[id][indexPrev][1]:.6f}]\n'  
-                              f'Current [x, y]: [{self.clickedData[id][indCur][0]:.6f}, {self.clickedData[id][indCur][1]:.6f}]\n'  
-                              f'Range [x, y]: [{self.clickedData[id][3][0]:.6f}, {self.clickedData[id][3][1]:.6f}]' 
-                      )
+                        msg =  (
+                                f'Previous [x, y]: [{self.clickedData[graphId][indexPrev][0]:.6f}, {self.clickedData[graphId][indexPrev][1]:.6f}]\n'  
+                                f'Current [x, y]: [{self.clickedData[graphId][indCur][0]:.6f}, {self.clickedData[graphId][indCur][1]:.6f}]\n'  
+                                f'Range [x, y]: [{self.clickedData[graphId][3][0]:.6f}, {self.clickedData[graphId][3][1]:.6f}]' 
+                        )
 
-                  return msg 
+                    return msg 
 
             # As with the click readout, a commonX tab fans the selection out:
             # a rubber-band on any graph fills every selection box on the tab.
@@ -2014,7 +1956,7 @@ class DashLinePlot():
 
                 # update the graph set
                 global divSets
-                divSets[tabNum], _, _, _ = self.makeGraphSet(dft, graphSetName, value[0], value[1]) 
+                divSets[tabNum], _, _, _ = self.makeGraphSet(dft, graphSetName) 
                 msg = f'Selected range [{value[0]:.6f}, {value[1]:.6f}]'
                 return msg
             
@@ -2041,15 +1983,15 @@ class DashLinePlot():
 
         Args:
             | configfile (string): configuration file defining the graphs.
-            | cback (bolean): use callbacks to populate the data on the tabs (default True)
+            | cback (bool): use callbacks to populate the data on the tabs (default True)
                              (recommended for large data sets)
-            | flaskServerRunning (bolean): entry state of the flask server (default False)
+            | flaskServerRunning (bool): entry state of the flask server (default False)
             | datadir (string): directory to resolve relative data file names against,
                              or None to resolve them against the working directory
             | pagetitle (string): browser tab title, or None for the Dash default
 
         Returns:
-            | flaskServerRunning (bolean): running state of flask server at the end of this function.
+            | flaskServerRunning (bool): running state of flask server at the end of this function.
         """
 
         # set callbacks flag as requested
@@ -2080,7 +2022,7 @@ class DashLinePlot():
             # setup file, open a new dash window, then only render the page with the updated information 
             # as implemented in the else section here.
             if not flaskServerRunning:
-                threading.Thread(target=self.run_dash,
+                threading.Thread(target=self.runDash,
                                  args=(pageLayout, port, pagetitle),
                                  daemon=True).start()
                 flaskServerRunning = True
@@ -2124,7 +2066,7 @@ if __name__ == "__main__":
               'not found. Fix the Datafile entries, or pass --datadir.\n')
         sys.exit(1)
 
-    # run_dash runs in a daemon thread, so the main thread has to stay alive
+    # runDash runs in a daemon thread, so the main thread has to stay alive
     # for the server to keep serving.
     print(f'\nserving on http://127.0.0.1:{args.port}/   (Ctrl+C to stop)\n')
     try:
