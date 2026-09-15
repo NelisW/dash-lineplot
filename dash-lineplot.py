@@ -180,7 +180,6 @@ Div(
 __author__='CJ & MS Willers'
 
 import sys
-import os
 import json
 
 import threading
@@ -219,10 +218,9 @@ def resourcePath(relative_path):
 
     return Path(base_path) / relative_path
 
-# The fonts in the application can be set with a custom CSS stylesheet to modify the default styles of the elements. 
-#     app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
-external_stylesheets = [str(resourcePath('assets/bWLwgP.css'))]
-
+# bWLwgP.css needs no explicit external_stylesheets entry: dash.Dash's
+# assets_folder serves everything under assets/ automatically, this file
+# included.
 encoded_image = base64.b64encode(open(resourcePath('icons/logoSet2long.png'), 'rb').read())
 
 ################################################################
@@ -500,16 +498,6 @@ def nearestSample(xs, x):
         return None
     return int(np.abs(values - x).argmin())
 
-# look at this - Faster alternative for sorted data:
-# import bisect
-# def nearestSample_sorted(xs, x):
-#     arr = np.asarray(xs, dtype=float)
-#     idx = min(bisect.bisect_left(arr, x), len(arr) - 1)
-#     # Also check left neighbor for edge cases
-#     if idx > 0 and abs(arr[idx-1] - x) <= abs(arr[idx] - x):
-#         return idx - 1
-#     return idx
-
 ################################################################
 def isEnumSeries(series):
     """
@@ -622,6 +610,14 @@ def readConfigTables(configfile):
     if isJsonConfig(configfile):
         with open(configfile, 'r', encoding='utf-8') as fjson:
             cfg = json.load(fjson)
+        missing = [key for key in ('header', 'sheets') if key not in cfg]
+        if missing:
+            raise ValueError(
+                f"{configfile} is missing top-level "
+                f"{'key' if len(missing) == 1 else 'keys'} "
+                f"{', '.join(repr(m) for m in missing)}. A JSON "
+                f"configuration needs both a 'header' object and a "
+                f"'sheets' object; see docs/userguide.md for the shape.")
         dfHeader = pd.DataFrame([{'Variable': k, 'Value': v}
                                  for k, v in cfg['header'].items()])
         sheets = {name: onCanonicalColumns(pd.DataFrame(rows))
@@ -944,7 +940,6 @@ class DashLinePlot:
         """
         #  colors
         backgroundColor = 'aliceblue'
-        gridColour = 'lightgrey'
 
         # get the header info from the header sheet in the config file
         pagetop = dfPlotterHeader.loc['PageTop','Value'] if 'PageTop' in dfPlotterHeader.index else ''
@@ -953,7 +948,7 @@ class DashLinePlot:
         # create graphs output folder if not exist
         grDir = './graphs'
         if not Path(grDir).exists():
-            Path(grDir).mkdir
+            Path(grDir).mkdir()
 
         # graphs to disk requested?
         to_disk_rows = dft[dft['Variable'] == 'ToDisk']['Value']
@@ -1031,7 +1026,34 @@ class DashLinePlot:
             if isinstance(row['Datafile'], str) and row['Datafile'].strip():
                 dataref = row['Datafile'].strip()
 
+            # A missing or misspelled Datafile reaches here as None or as a
+            # string nothing was loaded under, and a raw dict lookup would
+            # raise an unhelpful KeyError naming only the bad key. Name the
+            # sheet and the row instead, and list what was actually loaded,
+            # so a typo is a one-line fix rather than a stack trace to read.
+            if dataref not in self.datafiles:
+                available = ', '.join(sorted(self.datafiles)) or 'none'
+                reason = 'no Datafile is set' if dataref is None else f'{dataref!r} was not loaded'
+                raise ValueError(
+                    f"Sheet '{graph}': the yValue row for '{row['Value']}' "
+                    f"needs a data file, but {reason}. Set a Datafile on "
+                    f"this sheet, on the block above this row, or in this "
+                    f"row's own Datafile column. Data files loaded: {available}.")
+
             traceDf = self.datafiles[dataref]
+
+            if ctx['xvalue'] not in traceDf.columns:
+                raise ValueError(
+                    f"Sheet '{graph}': xValue '{ctx['xvalue']}' is not a "
+                    f"column of {dataref}. Columns available: "
+                    f"{', '.join(str(c) for c in traceDf.columns)}.")
+
+            if row['Value'] not in traceDf.columns:
+                raise ValueError(
+                    f"Sheet '{graph}': yValue '{row['Value']}' is not a "
+                    f"column of {dataref}. Columns available: "
+                    f"{', '.join(str(c) for c in traceDf.columns)}.")
+
             rawX = traceDf[ctx['xvalue']]
             traceX = rawX * ctx['xscale'] + ctx['xoffset']
 
@@ -1139,12 +1161,23 @@ class DashLinePlot:
 
             #  current graph title and ylabel for the plot
             grTitle = row['Value']
-            yLabel = dft.loc['yLabel#'+setStr,'Value']
 
-            #  graph set y hover text format 
-            hfmt_y = '.4f' 
-            if isinstance(dft.loc['yLabel#'+setStr,'Format'], str):
-                hfmt_y = dft.loc['yLabel#'+setStr,'Format']
+            # A Title with no yLabel row under it -- easy to do by deleting
+            # the wrong row, or pasting a Title without its usual neighbour
+            # -- would otherwise raise a bare KeyError naming only the
+            # internal '#000'-style index label.
+            yLabelKey = 'yLabel#' + setStr
+            if yLabelKey not in dft.index:
+                raise ValueError(
+                    f"Sheet '{graph}': Title '{grTitle}' has no yLabel row "
+                    f"under it. Every Title must be followed by a yLabel "
+                    f"row, even one whose Value is left blank.")
+            yLabel = dft.loc[yLabelKey,'Value']
+
+            #  graph set y hover text format
+            hfmt_y = '.4f'
+            if isinstance(dft.loc[yLabelKey,'Format'], str):
+                hfmt_y = dft.loc[yLabelKey,'Format']
 
             #  determine if the rectangle tool is present
             #  this will be the case if in any line is using markers
@@ -1203,10 +1236,26 @@ class DashLinePlot:
                 yAxisDict['ticktext'] = setCategories
                 yAxisDict['range'] = [-0.5, len(setCategories) - 0.5]
 
+            # The legend defaults to a column outside the plot, on the
+            # right, sized to fit its longest entry. Since that width
+            # varies line by line, stacked graphs with different legend
+            # text end up with different plot-area widths, and their x axes
+            # -- the same time values -- no longer line up at the right
+            # edge. Anchoring the legend inside the top-right corner of the
+            # plot area instead means every graph's plot area is exactly
+            # the margin-defined width, so the x axes of stacked graphs
+            # align regardless of what their legends say.
+            legendDict = {
+                'x': 1, 'y': 1, 'xanchor': 'right', 'yanchor': 'top',
+                'bgcolor': 'rgba(255, 255, 255, 0.6)',
+                'bordercolor': 'rgba(0, 0, 0, 0.15)', 'borderwidth': 1,
+            }
+
             # create dictionary with the layout and data
             figdict = {'layout':{'title': grTitle,
                                 'xaxis':{'title': {'text': ctx['xlabel']}, 'hoverformat': ctx['xformat']},
                                 'yaxis':yAxisDict,
+                                'legend': legendDict,
                                 'clickmode': 'event+select',
                                 'hovermode': 'x',           # set compare data on hover
                                 'plot_bgcolor': backgroundColor,
@@ -1339,39 +1388,22 @@ class DashLinePlot:
 
         #  List of all the unique graph names for which we need to register callback functions
         graphList = []
-        
-        # make a list of all possible graph tabs and graphs sets in dataframe dfg
-        # to be used in generating all possible callbacks
-        global allTabs
+
+        # every sheet whose name carries 'graph-', i.e. every candidate tab
         allTabs = dfPlotterConfig['Graph'].unique()
 
-        global allGraphs
-        allGraphs = []
-
-        # counter for active tabs
-        tabIndex = 0
-
         # for each graph tab in the input data, i.e. each sheet starting with 'graph-'
-        for i, graphTab in enumerate(allTabs):
+        for graphTab in allTabs:
 
             # extract info for this graph set
-            dft = dfPlotterConfig[(dfPlotterConfig['Graph']==graphTab)]        
-            
-            # extract all graph names for this tab    
-            titleRows = dft[(dft['Variable']=='Title')]
-            for index, row in titleRows.iterrows():
-                setStr = str(index).split('#')[1]
-                grID = graphTab+setStr
-                allGraphs.append(grID)
-            
+            dft = dfPlotterConfig[(dfPlotterConfig['Graph']==graphTab)]
+
             # First check exclude flag
             to_include_rows = dft[dft['Variable'] == 'Include']['Value']
             toInclude = cellFlag(to_include_rows.values[0], default=True) if not to_include_rows.empty else True
-            
+
             # collect data and build the data for the sheet
             if toInclude:
-                tabIndex = tabIndex + 1
-
                 divSet, grList, xmin, xmax = self.makeGraphSet(dft, graphTab)
 
                 divSets.append(divSet)
@@ -1686,9 +1718,8 @@ class DashLinePlot:
         # directory for this Dash app
         # this must be global to stay in scope in applications that use the plotter as a module
         global dashApp
-        dashApp = dash.Dash(__name__, 
+        dashApp = dash.Dash(__name__,
                             assets_folder=resourcePath('assets'),
-                            external_stylesheets=external_stylesheets,
                             title=pagetitle if pagetitle else 'Dash')
 
         # override security restrictions: allow the serving of local pages
