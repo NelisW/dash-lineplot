@@ -215,12 +215,15 @@ def resourcePath(relative_path):
         # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
-        base_path = Path(".").resolve()
+        base_path = Path(__file__).resolve().parent
 
     return Path(base_path) / relative_path
 
-
+# The fonts in the application can be set with a custom CSS stylesheet to modify the default styles of the elements. 
+#     app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 external_stylesheets = [str(resourcePath('assets/bWLwgP.css'))]
+
+encoded_image = base64.b64encode(open(resourcePath('icons/logoSet2long.png'), 'rb').read())
 
 ################################################################
 # Columns a graph sheet may carry. Any sheet is reindexed onto these so that
@@ -950,7 +953,7 @@ class DashLinePlot:
         # create graphs output folder if not exist
         grDir = './graphs'
         if not Path(grDir).exists():
-            os.mkdir(grDir)
+            Path(grDir).mkdir
 
         # graphs to disk requested?
         to_disk_rows = dft[dft['Variable'] == 'ToDisk']['Value']
@@ -1294,7 +1297,6 @@ class DashLinePlot:
         ) 
 
         # 7) Div with license logos
-        encoded_image = base64.b64encode(open('icons/logoSet2long.png', 'rb').read())
         thisDivList.append(
             html.Div([
                         html.Img(src=f'data:image/png;base64,{encoded_image.decode()}',
@@ -1327,8 +1329,6 @@ class DashLinePlot:
         global divSets
         global graphTabs
         global graphList
-        global sliderMinValues
-        global sliderMaxValues
 
         # divSets to be used when constructing the page
         # each entry in this list is a different tab containing several graphs
@@ -1339,10 +1339,6 @@ class DashLinePlot:
 
         #  List of all the unique graph names for which we need to register callback functions
         graphList = []
-
-        # slider limits
-        sliderMinValues = []
-        sliderMaxValues = []
         
         # make a list of all possible graph tabs and graphs sets in dataframe dfg
         # to be used in generating all possible callbacks
@@ -1380,8 +1376,6 @@ class DashLinePlot:
 
                 divSets.append(divSet)
                 graphList.append(grList)
-                sliderMinValues.append(xmin)
-                sliderMaxValues.append(xmax)
                 graphTabs.append(graphTab.split('-')[1])
 
     ##########################################
@@ -1575,19 +1569,28 @@ class DashLinePlot:
                 else:
                     break
 
-        # Parse the header column names dynamically (handling spaces, commas, or tabs)
-        header = header_line.strip().removeprefix("%")
-        header = header.lstrip()
-        column_headers = re.split(r",|\t|\s+", header)
+        # no header line with % found, assume first line to be the header
+        if header_line == None:
+            dfData = pd.read_csv(
+                filename, 
+                header = 0,
+                sep=r",|\t|\s+", # Handles mixed separators in the data rows too
+                engine="python"  # Required when using regex separators in pandas
+            )
 
         # Load the data rows, skipping all '%' metadata lines, and apply the headers
-        dfData = pd.read_csv(
-            filename, 
-            skiprows=skip_count, 
-            names=column_headers, 
-            sep=r",|\t|\s+", # Handles mixed separators in the data rows too
-            engine="python"  # Required when using regex separators in pandas
-        )
+        else:
+            # Parse the header column names dynamically (handling spaces, commas, or tabs)
+            header = header_line.strip().removeprefix("%")
+            header = header.lstrip()
+            column_headers = re.split(r",|\t|\s+", header)
+            dfData = pd.read_csv(
+                filename, 
+                skiprows=skip_count, 
+                names=column_headers, 
+                sep=r",|\t|\s+", # Handles mixed separators in the data rows too
+                engine="python"  # Required when using regex separators in pandas
+            )
 
         return dfData
 
@@ -1642,7 +1645,7 @@ class DashLinePlot:
                 # Excel data files
                 # top row is data column names
                 # Only the first sheet is loaded
-                # To be generalised: specify the sheet from the config file
+                # To be generalised: specify the sheet from the config file            
                 if 'xls' in extension:
                     self.datafiles[datafilename] = pd.read_excel(datapath, index_col=None)
 
@@ -1685,6 +1688,7 @@ class DashLinePlot:
         global dashApp
         dashApp = dash.Dash(__name__, 
                             assets_folder=resourcePath('assets'),
+                            external_stylesheets=external_stylesheets,
                             title=pagetitle if pagetitle else 'Dash')
 
         # override security restrictions: allow the serving of local pages
@@ -1992,60 +1996,6 @@ class DashLinePlot:
                     return 'none selected'
                 return self.commonSelectMessage(_self, bounds[0]) 
 
-        # # time slider callback for each tab - display selected values of the slider
-        # for gr in allTabs:
-        #     theGraph = str(gr)
-
-        #     @dashApp.callback(
-        #         Output('output-container-xSlider-'+ theGraph, 'children'),
-        #         [Input('xSlider-'+theGraph, 'value'),
-        #          Input('submit-button-'+theGraph, 'n_clicks'), 
-        #         ],    
-        #         [State('tabs', 'value'),
-        #          State('minVal-'+theGraph, 'value'), State('maxVal-'+theGraph, 'value'),
-        #         ]             
-        #     )
-        #     def process_xSlider_data(value, nclicks, tab, mini, maxi):
-        #         # tab number in the current page layout
-        #         tabNum = int(tab.split(' ')[1])
-        #         graphSetName = 'graph-'+graphTabs[tabNum]
-        #         # select the graph data
-        #         dft = dfPlotterConfig[(dfPlotterConfig['Graph']==graphSetName)] 
-        #         # determine which input triggered the callback
-        #         ctx = dash.callback_context
-        #         clicked_id = ctx.triggered[0]['prop_id'].split('.')[0]
-        #         # Get slider limits from input fields
-        #         if 'submit' in clicked_id:
-        #             start = mini
-        #             if start < sliderMinValues[tabNum]:
-        #                 start = sliderMinValues[tabNum]
-        #             end = maxi
-        #             if end > sliderMaxValues[tabNum]:
-        #                 end = sliderMaxValues[tabNum] 
-        #             value[0] = start
-        #             value[1] = end
-
-        #         # update the graph set
-        #         global divSets
-        #         divSets[tabNum], _, _, _ = self.makeGraphSet(dft, graphSetName) 
-        #         msg = f'Selected range [{value[0]:.6f}, {value[1]:.6f}]'
-        #         return msg
-            
-        #     @dashApp.callback(
-        #         [Output('xSlider-'+theGraph, 'value'), 
-        #          Output('minVal-'+theGraph, 'value'), 
-        #          Output('maxVal-'+theGraph, 'value'), 
-        #         ],
-        #         [Input('resetSlider-'+theGraph, 'n_clicks')],
-        #         [State('tabs', 'value')] 
-        #     )
-        #     def reset_xSlider(nclicks, tab):
-        #         tabNum = int(tab.split(' ')[1])
-        #         low = sliderMinValues[tabNum]
-        #         hi = sliderMaxValues[tabNum]
-        #         limit = [low, hi]
-        #         return limit, '', ''
-
     ##########################################
     def runPlotter(self, port, configfile, cback = True, flaskServerRunning=False,
                    datadir=None, pagetitle=None):
@@ -2077,7 +2027,6 @@ class DashLinePlot:
             # prepare all required graph sets
             self.prepareGraphs()
 
-        
             # now create the page we want to render
             pageLayout = self.makePage() 
 
