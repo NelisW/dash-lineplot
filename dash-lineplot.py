@@ -1075,8 +1075,10 @@ class DashLinePlot:
                 dLines['line']['shape'] = 'hv'
                 dLines['text'] = hoverText
                 dLines['customdata'] = np.asarray(rawX, dtype=float)
-                dLines['hovertemplate'] = (
-                    f'x=%{{customdata:{ctx["xformat"]}}}<br>%{{text}}<extra></extra>')
+                # x is left out: it is already shown on the x axis below the
+                # graph, via the vertical hover line, so repeating it in the
+                # tooltip would be redundant.
+                dLines['hovertemplate'] = '%{text}<extra></extra>'
             else:
                 dLines['customdata'] = np.column_stack([
                     np.asarray(rawX, dtype=float), np.asarray(ySeries, dtype=float)])
@@ -1166,11 +1168,12 @@ class DashLinePlot:
                     # where the trace was built, because the y hoverformat
                     # (hfmt_y) belongs to the graph, not the trace: it comes
                     # from this set's yLabel row. An enum trace already has
-                    # its own hovertemplate and is left alone.
+                    # its own hovertemplate and is left alone. x is left out
+                    # of the tooltip: it is already shown on the x axis
+                    # below the graph, via the vertical hover line.
                     if 'hovertemplate' not in graphData[traceNum]:
                         traceName = graphData[traceNum].get('name', '')
                         graphData[traceNum]['hovertemplate'] = (
-                            f'x=%{{customdata[0]:{ctx["xformat"]}}}<br>'
                             f'{traceName}=%{{customdata[1]:{hfmt_y}}}<extra></extra>')
 
                     # check for usage of markers

@@ -612,9 +612,11 @@ carrying a large data set takes a moment.
 ### Hover
 
 Moving the pointer across a graph displays the values of every line in that
-graph at the hovered x position, each in its line colour, together with the
-x value. The numbers are formatted according to the `Format` attribute set
-on the `xLabel` and `yLabel` rows. An enumeration shows its state name.
+graph at the hovered x position, each in its line colour. The x value
+itself is not repeated in the tooltip, since it is already shown on the x
+axis below the graph via the vertical hover line. The numbers are formatted
+according to the `Format` attribute set on the `xLabel` and `yLabel` rows.
+An enumeration shows its state name.
 
 **The readout is shared by every graph on the page.** Hovering any one
 graph makes all the others display their own values at the same x position
