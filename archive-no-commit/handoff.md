@@ -167,6 +167,15 @@ why.
 - **Never commit to `master`.** Work happens on a feature branch
   (currently `feature/modernise-and-json`); merging is the user's
   decision.
+- **`archive-no-commit/` must always be committed, despite its name.** The
+  `no-commit` in the folder name is required by the handoff-management
+  skill's own naming convention -- it is not an instruction to exclude the
+  folder from commits in this repository. This repository is deployed by
+  cloning to several PCs, so `handoff.md`, `handoff-history/`, and
+  `prompt.md` under this folder must travel with every clone like any other
+  tracked file. Stage and commit changes here exactly as any other change;
+  do not treat the directory name as a reason to leave it out. (A prior
+  session got this wrong and left `prompt.md` uncommitted -- see history.)
 
 ## 5. Current Backlog
 

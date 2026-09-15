@@ -78,3 +78,38 @@ since they are part of the same request lineage:
   `archive-no-commit/`, as a single-file handoff plus this prompt file, so
   work here no longer depends on that other repository's session record.
   This is the request this file itself is the result of.
+
+---
+
+My colleague made some changes to the code to implement some of your prior recommendations and to add some new functionality for test purposes.
+
+Scan the code base carefully on the basis that everything could have changed.
+
+My colleague did something that broke the zoom functionality provided by the four text boxes on the right side. When she entered values and pressed 'apply' nothing happened. Please fix.
+
+---  
+
+
+My colleague made some changes to the code to implement some of your prior recommendations and to add some new functionality for test purposes.
+
+Scan the code base carefully on the basis that everything could have changed.
+
+confirm all is working and stable
+
+---
+
+fix 1. Critical — app failed to start on a fresh checkout
+
+fix 2. Minor regression — stylesheet loaded twice
+
+dead code removal:  there are historic carry over code that has no further purpose. Remove the dead code.
+
+harden the code against user error, e.g., bogus or missing data in the config files.
+
+The attached picture shows how the right side of different graphs do not align on the right hand side, because of the label displayed next to the graph.  Move the lqbel to inside the graph so that the right sides of the sub plots all align on time(x) value.
+
+The full repo is deployed on different PCs.  For this to work, all the files in archive-no-commit must always be committed as first class repo members.  The reason why the `no-commit` is here is that you created the handoff, and the skill requires the `no-commit` in the name. add a rule in the handoff.md that this folder must always be committed.
+
+Review the content in the folders, some folders and content are historic and no longer used. For example, the earlier version was packaged for deployment. The new application space is in the development environment where all users are Python savy and the conda environment is sufficient.  Scan the code and folder contents, then build a plan of what will be removed. Once the plan is available, we will review each deletion one at a time.
+
+
