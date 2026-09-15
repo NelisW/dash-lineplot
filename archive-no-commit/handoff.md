@@ -1,10 +1,11 @@
 # dash-lineplot -- Task Handoff Document
 
-Status: 2026-09-14 -- browser-served Dash viewer, modernised off a 2022
-conda-and-Qt base. Reads Matlab, CSV, XLSX and JSON data (including
-multi-rate JSON), configured by an Excel workbook or an equivalent JSON
-file. Runs on `feature/modernise-and-json`, pushed to `origin`, not merged
-to `master`; that stays the user's decision.
+Status: 2026-09-15 -- browser-served Dash viewer, modernised off a 2022
+conda-and-Qt base. Reads CSV, XLSX and JSON data (including multi-rate
+JSON; Matlab support was removed, see `closed-history.md`), configured by
+an Excel workbook or an equivalent JSON file. Runs on
+`feature/modernise-and-json`, pushed to `origin`, not merged to `master`;
+that stays the user's decision.
 
 History-file cadence: size threshold, 30 KB (matching the convention this
 work already used in the `systemCHandbook` handoff it was split out of).
@@ -36,7 +37,8 @@ Guidance: key files/folders and what each one is.
 | `docs/userguide.md` | The maintained user-facing reference for the tool as it stands today. Follows the markdown house style, LaTeX-conversion-safe flavour. Read this, not `doc/*.tex`, for how to use the tool. |
 | `doc/*.tex`, `doc/pic/` | A March-2020 LaTeX user guide. **Stale** -- documents the removed PySide/Qt desktop window, the removed range slider (with three figures), and `visdcc` as a live dependency. Every chapter now carries a "this is historical, see `docs/userguide.md`" notice (added a session ago) rather than being half-fixed. **The user has said they will remove this tree themselves; do not delete it.** |
 | `environment.yml` | Portable conda environment, pins version floors only, no build strings, no `prefix:`. Solves on both Linux and Windows. See section 7 for the versions it currently solves to. |
-| `suggestedwork.md` | A read-verified code review of this repository: defects, dead code, structural problems, and an eight-work-package remediation plan. This is the current backlog in detail; section 5 below only summarises it. |
+| `suggestedwork.md` | The current, **forward-looking-only** backlog: open defects, structural and performance issues, hygiene, and an order of work. Closed items are not kept here -- see `closed-history.md` below. |
+| `archive-no-commit/closed-history.md` | Every closed item's write-up, and the narrative of each past review pass, moved out of `suggestedwork.md` to keep that file short. Read this for *why* something is the way it is; read `suggestedwork.md` for what is still worth doing. |
 
 ## 2. Current Design
 
@@ -57,7 +59,8 @@ sheets/objects, each becoming one browser tab. `readConfigTables` reads
 either format into the same table shape, so the rest of the code never
 has to care which one it got.
 
-**Data** can be Matlab (`scipy.io.loadmat`), CSV, XLSX, or JSON. JSON
+**Data** can be CSV, XLSX, or JSON (Matlab support existed once, via
+`scipy.io.loadmat`, but was removed -- see `closed-history.md`). JSON
 supports two shapes: a top-level list is one record array (one table); a
 top-level object is a set of named groups, one per sample rate, each
 selected in the config as `file.json#group`. Nothing is ever merged,
@@ -155,10 +158,10 @@ why.
   is a property of whatever process caused it and must never be assumed
   by this tool.
 - **Cross-platform.** Built and run on both Ubuntu and Windows. No
-  hard-coded paths, no drive letters, no user home directories. Prefer
-  `pathlib.Path` over hand-built `os.path` joins going forward (see
-  `suggestedwork.md` section 5) -- most of the file predates that
-  discipline and still uses `os.path`.
+  hard-coded paths, no drive letters, no user home directories.
+  `dash-lineplot.py` now uses `pathlib.Path` exclusively (the `os.path`
+  inconsistency this bullet used to warn about is closed -- see
+  `closed-history.md` pass 4); keep it that way going forward.
 - **`environment.yml` pins version floors, never build strings, never a
   `prefix:`.** The 2022 file this replaced was Windows-only for exactly
   those reasons.
@@ -174,65 +177,33 @@ why.
   tracked file. Stage and commit changes here exactly as any other change;
   do not treat the directory name as a reason to leave it out. (A prior
   session got this wrong and left `prompt.md` uncommitted -- see history.)
+- **`suggestedwork.md` stays forward-looking only.** When an item in it
+  closes, move its full write-up to `archive-no-commit/closed-history.md`
+  and delete it from `suggestedwork.md` -- do not mark items closed in
+  place there. The mix of open and closed items in one file was found
+  hard to read and this split is the fix; don't let `suggestedwork.md`
+  silently regrow a "closed since last review" section.
 
 ## 5. Current Backlog
 
 Guidance: prioritized, currently open items only.
 
-The detailed, line-referenced version of this list is `suggestedwork.md`
-in the repository root, with a recommended eight-work-package order
-(WP1 deletions, WP2 cell/dispatch defects, WP3 asset and start-up fixes,
-WP4 config validation, WP5 structure, WP6 tests/tooling, WP7 performance,
-WP8 documentation). **The summary below is frozen at the 2026-09-11
-first-pass review and has not been kept in step with `suggestedwork.md`
-since** -- items 1 through 6 in particular are substantially addressed by
-now (data-reader rewrite, cell helpers, callback-registration fix, dead
-code deletions across several sessions); `suggestedwork.md` itself is the
-one that has been kept current, session by session. Treat this list as a
-pointer to read `suggestedwork.md`, not as the current state itself. Most
-severe first, as originally written:
+As of 2026-09-15, `suggestedwork.md` was reworked to be forward-looking
+only (see the standing constraint above): it now holds exactly the open
+items, in five short sections (structure, performance, small independent
+items, repository hygiene, suggested order of work), with no closed
+history mixed in. **Read `suggestedwork.md` itself for the current
+backlog -- do not summarise it here, and do not let this section regrow
+into a second, driftable copy of it**, which is what happened to the list
+this section used to carry (it had frozen at the 2026-09-11 first-pass
+review while five further sessions of work landed). If you need the
+history behind why something closed, that's
+`archive-no-commit/closed-history.md`.
 
-1. **Crash-level defects in the data reader** (`readdatafile`): the
-   MATLAB and comma-separated branches are two independent `if`s rather
-   than one dispatch, so a header containing both a `%` and a comma runs
-   both and silently discards the first result; `dfData` can be returned
-   unbound for an unrecognised extension; `skiprows` can reach -1 for a
-   `.plt` file with no `%` header.
-2. **File-extension dispatch is case-sensitive and substring-based**
-   (`.CSV`/`.XLSX` fall through to the wrong reader; any extension
-   containing `mat` matches the MATLAB branch).
-3. **`np.isnan` called on configuration cells that may hold text** at six
-   sites -- one typo in a spreadsheet cell raises an unhelpful numpy
-   `TypeError` and takes the whole page down.
-4. **Callbacks registered against components that never exist**, because
-   `setupCallbacks` iterates sheet names and pre-`Include`-filter tab
-   lists rather than the graph ids actually placed on the page; hidden
-   only because `suppress_callback_exceptions` is set.
-5. **Eleven module-level `global` statements** carry per-instance state
-   (`divSets`, `dfPlotterConfig`, `dashApp`, and others) into module
-   scope, so two `DashLinePlot` instances in one process overwrite each
-   other -- which the module's own docstring advertises as a supported
-   use.
-6. **Dead code**: the slider callbacks and their six component ids (none
-   of which exist in the layout), the `visdcc`-era JS-injection template,
-   `allTabUsedIdx`, and the unused `reqStart`/`reqEnd` parameters.
-7. **No tests, no `pyproject.toml`, no linter configuration.** This is
-   what makes every structural change above riskier than it needs to be.
-8. ~~**Repository hygiene**: `dash-lineplot.spec` and the `.bat` launchers
-   describe a Qt build that no longer exists; the 122 MB vendored
-   `pyInstaller/` tree should be deleted alongside it.~~ **Done** this
-   session: `pyInstaller/`, `dash-lineplot.spec`, `runPyInstaller.bat`,
-   `startPlotTool.bat`, `pythonSetup/` (redundant with
-   `docs/userguide.md`'s own Installation section) and
-   `exmple-dash-config.xlsx` (pointed outside this repository) are all
-   deleted. `README.md` updated to match.
-9. **Stale documentation**: `doc/*.tex` documents the removed slider and
-   removed Qt/visdcc dependencies -- every chapter now carries a
-   "historical, see `docs/userguide.md`" notice rather than being fixed
-   outright; **the user has said they will remove this tree themselves**,
-   so leave it alone. The module docstring's 2019-era Dash tutorial
-   transcript and its `DashPlotWindow` mistake are both fixed, this
-   session and the one before it.
+In one line, what's left as of this rework: instance-vs-`global` state,
+`SetNum`/`TraceNum` columns instead of parsed index strings, the
+`configio.py` extraction, no tests/linter/`pyproject.toml`, and a handful
+of performance items not yet worth measuring against real data.
 
 **Left undone, deliberately, not because it is forgotten:**
 
@@ -240,11 +211,9 @@ severe first, as originally written:
   page-wide instead, in `graphsync.js`. Reimplementing anything closer to
   the original subplot-scoped behaviour is a separate decision, worth
   taking only if it turns out to be missed.
-- The Matlab reader (`scipy.io.loadmat`) is unexercised by any repository
-  data. `scipy` stays in the environment for it regardless.
 - HTML copies of every graph are written to `./graphs/` on every run
   whenever a sheet sets its disk-export flag; `suggestedwork.md` section
-  4.4 recommends defaulting that off.
+  2.4 recommends defaulting that off.
 
 ## 6. How to Cold-Restart
 
@@ -261,8 +230,9 @@ correctly.
 4. `docs/userguide.md` is the maintained reference for how the tool
    behaves today; do not restate its content here.
 5. `suggestedwork.md` is the maintained reference for what is wrong and
-   what to do about it; work through it in the work-package order it
-   gives, starting with WP1 (pure deletions, no behaviour change).
+   what to do about it; its own final section gives the suggested order
+   of work. `archive-no-commit/closed-history.md` has the reasoning
+   behind anything already closed.
 6. If work on this tool is being done from a caller project (as it was
    originally, from `systemCHandbook/CB_3dof`), this tool is reached by
    relative path only (`../dash-lineplot` from that project's own root, or
@@ -275,8 +245,10 @@ Guidance: config format, key function signatures, dependencies.
 
 **Environment**, as most recently solved by conda-forge (2026-09-10):
 Python 3.14.7, Dash 4.4.1, Plotly 7.0.0, pandas 3.0.5, numpy 2.5.3,
-openpyxl 3.1.5, scipy 1.18.0. `environment.yml` pins floors matching these
-levels of dash/pandas/numpy specifically, since those three broke
+openpyxl 3.1.5. (`scipy` was dropped from `environment.yml` once the
+Matlab reader that needed it was removed -- see `closed-history.md`.)
+`environment.yml` pins floors matching these levels of dash/pandas/numpy
+specifically, since those three broke
 something on the jump from the 2022 baseline (`run_server` removed,
 `Series[int]` positional fallback removed) and are worth not regressing
 past silently.

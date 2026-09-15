@@ -112,4 +112,38 @@ The full repo is deployed on different PCs.  For this to work, all the files in 
 
 Review the content in the folders, some folders and content are historic and no longer used. For example, the earlier version was packaged for deployment. The new application space is in the development environment where all users are Python savy and the conda environment is sufficient.  Scan the code and folder contents, then build a plan of what will be removed. Once the plan is available, we will review each deletion one at a time.
 
+---
 
+`suggestedwork.md` is hard to read with the mix of open and closed topics.
+Rework the file to remove closed and no longer relevant issues to a new `./archive-no-commit/closed-history.md` file.  In future, if a topic is closed move it there.  Keep suggestedwork.md only forward looking.
+
+
+### 5.1 Large number of global variables (at least 8)
+The following globals are set in one method and read in others:
+
+| Global            | Set in          | Read in                        |
+|-------------------|-----------------|--------------------------------|
+| `dfPlotterHeader` | `loadConfig:`407   | `makeGraphSet:904,905`, `readPageTitle:647-648`    |
+| `dfPlotterConfig` | `loadConfig:`1426  | `prepareGraphs:1272,1284`, `process_xSlider_data:1943` |
+| `pageDensity`     | `loadConfig:`1415  | `makeGraphSet:1146,1170,1178`, `makePage:1366`     |
+| `divSets`          | `prepareGraphs:`1257 | `render_content:1666`, `makePage:1333`, `process_xSlider_data:1959` |
+| `graphTabs`       | `prepareGraphs:`1260 | `makePage:1335`, `process_xSlider_data:1940`        |
+| `allTabs`         | `prepareGraphs:`1271 | N/A (appears unused outside setupCallbacks input)      |
+| `sliderMinValues` | `prepareGraphs:`1266 | `process_xSlider_data:1949,1952`                    |
+| `sliderMaxValues` | `prepareGraphs:`1267 | `process_xSlider_data:1953`                           |
+
+Passing these as parameters or wrapping them in a class instance would reduce hidden coupling.
+
+```python
+# Refactoring suggestion: wrap related state in a context object:
+class PlotContext:
+    def __init__(self):
+        self.header = pd.DataFrame()
+        self.config = pd.DataFrame()
+        self.density = 'compact'
+        self.div_sets = []
+        self.graph_tabs = []
+        self.slider_min = []
+        self.slider_max = []
+
+# Then pass ctx instead of global references.

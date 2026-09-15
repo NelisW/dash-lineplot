@@ -1,6 +1,6 @@
 ---
 title: "dash-lineplot: Suggested Work"
-date: "2026-09-15 (fourth pass)"
+date: "2026-09-15"
 pdf-engine: lualatex
 style: |
   .markdown-preview.markdown-preview {
@@ -28,606 +28,344 @@ puppeteer:
 
 # dash-lineplot: Suggested Work
 
-A review of the repository, listing defects, weak constructs, dead code and
-modernisation opportunities, with a recommended order of work.
+Open items only: defects, dead constructs, structural and performance
+issues, and a recommended order of work. This file is kept
+**forward-looking**. When an item here is closed (fixed, verified, or
+found no longer relevant), move its write-up to
+[`archive-no-commit/closed-history.md`](closed-history.md) and delete it
+from here -- don't mark it closed in place. That file also carries the
+narrative of every past review pass, if you need the history behind why
+something is the way it is.
 
 Markdown flavour for this file: Native/KaTeX, with PDF-export front matter.
 
-This is the fourth pass over this document. The first pass (2026-09-11,
-commit `3bc7304`) was read-only. The second pass, later the same day,
-found and fixed the broken-callbacks defect (N1 below) while fixing an
-unrelated zoom-controls bug the user reported. The third pass, later
-again the same day, fixed two more user-reported defects -- missing axis
-labels (N5) and Scale/Offset leaking into every hover/click/selection
-value (N6) -- then did a documentation sweep across the whole repository
-at the user's request.
+**Standing decision:** the xlsx configuration path is the one in daily
+use and stays the primary, actively maintained format. JSON config
+support is kept for the cases it already serves, but is not where further
+investment should go -- no new JSON-only features, and any shared refactor
+(`configio.py`, validation, cell helpers) should be judged by whether it
+helps the xlsx path, not by JSON parity.
 
-This fourth pass (2026-09-15) follows a colleague's own commit
-(`c9aa083`), merged without conflict, which fixed the `readdatafile`
-no-`%`-header crash (N3, closed below) among other things, but also
-reintroduced two regressions this session found and fixed again: the
-`graphs/` output directory was never actually created
-(`Path(grDir).mkdir` was missing its call parentheses, crashing the very
-first run on a fresh checkout), and `external_stylesheets` was
-reintroduced alongside `assets_folder` (double-loading the stylesheet,
-closing N4 the wrong way before this pass closed it correctly). This pass
-also: removed a further round of dead code the user asked for by name
-(see the new "Dead code, fourth pass" section); hardened the config-error
-paths the user asked to be hardened against bogus/missing data (Datafile,
-xValue/yValue column names, a Title with no yLabel row, a JSON config
-missing `header`/`sheets`); fixed a legend-alignment defect the user
-reported with a screenshot (the legend's variable outside-the-plot width
-was making stacked graphs' x axes not line up at the right edge); and,
-at the user's explicit direction, deleted the entire packaged-executable
-toolchain (`pyInstaller/`, `dash-lineplot.spec`, the two `.bat`
-launchers), the now-redundant `pythonSetup/`, and `exmple-dash-config.xlsx`
--- see the "Deletions, fourth pass" section. The LaTeX guide under `doc/`
-was deliberately left alone: the user will remove it themselves. Every
-item below has been re-checked against the current code and marked
-**Closed**, **Open**, **Partly done** or **New**.
-
-**Standing decision, recorded 2026-09-14:** the xlsx configuration path is
-the one in daily use and stays the primary, actively maintained format. JSON
-config support is kept for the cases it already serves, but is not where
-further investment should go -- no new JSON-only features, and any shared
-refactor (`configio.py`, validation, cell helpers) should be judged by
-whether it helps the xlsx path, not by JSON parity. This reprioritises
-WP5 and the tools/ deduplication below.
-
-## Verification status
-
-Most findings are now checked against the running application (conda env
-`dashplot`, `dash-lineplot.py -f dash-config.xlsx`), not just read from the
-source, so several of this pass's findings carry more confidence than the
-first pass's did. Items not exercised in the browser are marked as such.
-
-## Closed since the last review
-
-| # | Item | How it was closed |
-|---|---|---|
-| 1.1 | Data reader ran two mutually exclusive branches | `readdatafile` rewritten as a single scan-then-parse pass (`dash-lineplot.py:1480`). No more `matlab`/`comma` flag pair. |
-| 1.3 | `skiprows` could reach -1 | Same rewrite: `skip_count` only increments on an actual `%` line, never decremented. |
-| 1.5 | `np.isnan` on cells that may hold text | `cellFloat`/`cellText`/`cellFlag` helpers added and used at every site the original table listed. |
-| 1.7 | Callbacks registered against components that never exist | Original defect (`allTabs`/`allGraphs`) was replaced by a *different* broken loop (`itertools.chain(graphList)`, which doesn't flatten a list of lists) in commit `a37bd56`, then fixed to `itertools.chain(*graphList)` in this session, 2026-09-14. Verified in the browser: Apply/Reset on the X/Y range boxes now work. See the new finding N1 below for how this regressed in between. |
-| 1.10 | Stylesheet loaded twice | `external_stylesheets` no longer passed to `dash.Dash(...)`; the assets folder serves it once. (Left behind a dead module-level variable -- see N4.) |
-| 2.2 | `visdcc`/hover-injection dead code (`JS_STR_template`, `jsString`, commented `render_content`) | Deleted outright. |
-| 2.3 | `allTabUsedIdx` | Deleted outright. |
-| 2.4 | `reqStart`/`reqEnd` on `makeGraphSet` | Parameters removed; no caller passed them anyway. |
-| 2.5 | `__version__` SVN keyword | Attribute removed. |
-| 5 | `class DashLinePlot():` -> `class DashLinePlot:` | Done. |
-| 5 | `import sys, os` -> one per line | Done. |
-| 5 | f-string for the base64 image `src` | Done. |
-| 5 | Shadowed builtin `id` (`generateFeedbackBoxes`, `display_click_data`) | Renamed to `graphId` in both places, and `display_click_data`'s indentation was straightened to four spaces at the same time. |
-| 5 | `math.isnan`/`np.isnan` mixed with the rest | Standardised on `pd.isna`; `import math` removed. |
-| 5 | `(bolean)` typo in docstrings | Fixed everywhere; none remain. |
-| N2 | MATLAB (`.mat`) support undocumented after removal | Resolved by finishing the removal: `scipy` dropped from `environment.yml`, and every doc site corrected -- see "Documentation sweep" below. |
-
-## New findings, this pass (second pass, callback fix)
-
-### N1. The zoom Apply/Reset buttons were completely broken (now fixed)
-
-`setupCallbacks` (`dash-lineplot.py:1682`, was `:1722`) builds one callback
-per graph by iterating what it believes is a flat list of graph ids. Commit
-`a37bd56` changed the source of that iteration from
-`itertools.chain(allTabs, allGraphs)` (flat, but targeting ids that mostly
-don't exist -- the original item 1.7) to `itertools.chain(graphList)`.
-`graphList` is a *list of lists*, one list of graph ids per tab, and
-`itertools.chain()` given a single argument does not flatten it -- it just
-walks the outer list. So `gr` was bound to each tab's whole list of ids, and
-`theGraph = str(gr)` produced ids like
-`"['graph-RelativePosition000', 'graph-RelativePosition001']"`, wired to
-components that never existed. Every per-graph callback was affected: the
-X/Y range Apply/Reset buttons, the range-box-follows-mouse-zoom sync, and
-both click and selection readouts. This is why the range boxes accepted
-typed values but Apply visibly did nothing.
-
-Fixed in this session by flattening correctly: `itertools.chain(*graphList)`.
-Verified by starting the app and driving the X-range boxes in the browser:
-Reset returns to the full data range, and typing `1`/`5` and clicking Apply
-zooms the axis to exactly `[1, 5]`.
-
-This closes item 1.7 for real, but it is worth recording that a mechanical,
-one-token change to a `for` loop took down every interactive control on the
-page with no exception raised anywhere (`suppress_callback_exceptions` is
-still `True` -- see 1.7's original fix note, still open). **This is the
-strongest argument in the repository for WP6 (tests) landing before WP5
-(structure): the next refactor of this exact loop deserves a regression
-test, not a bug report.**
-
-### N2. MATLAB (`.mat`) support was silently dropped, but was still documented as current -- now closed
-
-The rewrite of `loadData`'s extension dispatch (`dash-lineplot.py:1578`)
-deleted the `'mat' in extension` branch and the `from scipy.io import
-loadmat` import along with it -- reasonably, since nothing in this
-repository's own data or configs used it. But several places still told a
-reader `.mat` is supported: `README.md`, `docs/userguide.md`, `doc/func.tex`
-(plus `environment.yml`, which still pinned `scipy`) -- see the original
-list this finding shipped with, in the version-history of this file, for
-the exact line numbers at the time.
-
-A `.mat` file named in a configuration still does not raise a clear error
-today -- `extension` is `.mat`, matches neither `'xls'` nor `'json'`, and
-falls to `self.readdatafile(datapath)`, which will try to open a binary
-MATLAB file as text and fail confusingly -- but this is no longer a
-*documentation* problem: every site above was corrected in this pass's
-"Documentation sweep" to say plainly that `.mat` is not supported, rather
-than either restoring the reader or leaving the docs wrong. If MATLAB
-support is ever needed again, it must be re-implemented, not re-enabled --
-the reader is gone, not disabled.
-
-### N3. `readdatafile` now requires a file to have a `%`-prefixed header line
-
-The rewritten `readdatafile` (`dash-lineplot.py:1480`) scans leading lines,
-keeps the first one that starts with `%` as `header_line`, and then does:
-
-```python
-header = header_line.strip().removeprefix("%")   # line 1511
-```
-
-If the file has *no* `%` line at all -- an ordinary CSV with a plain
-top-of-file header, exactly what `docs/userguide.md:157` documents as
-supported (`` `.csv` and most others | Column names on the top line, one
-sample per line. ``) -- `header_line` is still `None`, and this raises
-`AttributeError: 'NoneType' object has no attribute 'strip'`. This is the
-same class of defect as the original item 1.2 (`dfData` unbound), in a new
-shape: the rewrite fixed the traced failure but introduced a different
-unconditional crash on a documented, previously-working input. It has not
-been hit in this repository only because every shipped data file
-(`data/*.traj`) happens to carry a `%` header.
-
-Fix: when no `%` line is found, fall back to the ordinary case -- read row
-1 as the header (`pd.read_csv(..., header=0)` with the same multi-separator
-`sep` regex) rather than raising. Add this exact case (plain CSV, no `%`)
-to the fixture list in WP6; it is the one most likely to recur, since it is
-what any tool other than the ones already writing `%`-headed `.traj` files
-will produce by default.
-
-### N4. Dead `external_stylesheets` module-level variable
-
-Closing item 1.10 (dropping the `external_stylesheets=` keyword from
-`dash.Dash(...)`) left the variable itself, `external_stylesheets =
-[str(resourcePath('assets/bWLwgP.css'))]` (`dash-lineplot.py:226`), with no
-reader anywhere in the file. Small, but worth folding into WP1's next pass.
-
-## New findings, third pass (user-reported, this session) -- both fixed
-
-### N5. Axis labels were missing on every graph (fixed)
-
-`xaxis`/`yaxis` titles were built as plain strings --
-`'xaxis':{'title': ctx['xlabel'], ...}` and `yAxisDict = {'title': yLabel,
-...}`. Plotly.js 4 (bundled by the `dash>=4.4` this environment now pins)
-accepts a bare string for `title` without error -- `gd.layout.xaxis.title`
-reads back correctly -- but renders it as nothing: the `<g class="g-xtitle">`
-element exists in the DOM with empty text content. Confirmed with
-`Plotly.relayout(gd, {'xaxis.title': {text: '...'}})` in the browser
-console: the object form renders immediately, the string form never did.
-
-Fixed by wrapping both in `{'text': ...}`, at `dash-lineplot.py:1193`
-(`yAxisDict`) and `:1202` (`xaxis`). Verified in the browser: "Time [s]"
-and "Distance [m]" (etc.) now show on every graph, in both `compact` and
-`comfortable` density.
-
-### N6. Scale and Offset leaked into every value the reader read off (fixed)
-
-A `yValue` row's `Scale`/`Offset` (and a block's `xValue` `Scale`/`Offset`)
-are meant to be a *display* convenience only, so traces of very different
-magnitude -- the user's own example was microvolts and megavolts -- can
-share one axis. They were not display-only: the hover tooltip, the Click
-Data box, and the Rectangle Tool Selection Data box all read the value
-straight back off the trace's plotted `x`/`y`, which *is* the scaled,
-offset one. A line configured with `Scale=0.01` (the shipped
-`dash-config.xlsx` has one, `Missile rol/100`) reported `0.225` on hover
-where the recorded value was `22.5125`.
-
-Fixed by giving every trace a `customdata` array carrying the true,
-unscaled x (and for a numeric trace, the true y) alongside the plotted one,
-and reading from it everywhere a value is displayed:
-
-- Each trace's `hovertemplate` now renders `customdata`, not the default
-  `%{y}`, so the native Plotly hover tooltip shows the recorded value
-  (`dash-lineplot.py:1069-1090`, completed once the graph's y hoverformat
-  is known at `:1150-1157`).
-- `commonClickMessage` and `commonSelectMessage` (the `commonX` readouts,
-  `:689` and `:744`) now read each trace's value from `customdata` instead
-  of its plotted `y`, and convert the clicked x / selection edges back to
-  true x through a new `self.graphXAxis[grID]` = `(xscale, xoffset)`
-  recorded per graph (`:1260`) -- a selection box's edges are a plot
-  position with no recorded sample behind them, so there is nothing else to
-  convert them from.
-- `display_click_data` (`:1901`, the non-`commonX` click box) now prefers
-  the clicked point's own `customdata` over its plotted `x`/`y`.
-- `display_selected_data` (`:1979`, the non-`commonX` rectangle-select box)
-  previously reported the selection box's raw top-left/bottom-right
-  corners. That report is not just stale but ambiguous: two lines on one
-  graph can carry different `Scale`/`Offset`, so a box corner has no single
-  true value to convert to. It now delegates to `commonSelectMessage`,
-  which already solves this correctly by reporting each line's own true y
-  extent inside the selected x window -- the non-`commonX` and `commonX`
-  selection boxes now report in the same format. This is a visible
-  behaviour change, documented in `docs/userguide.md`'s "Rectangle Tool
-  Selection Data" section.
-
-Verified in the browser on `Missile rol/100` (`Scale=0.01`): hover tooltip,
-Click Data, and Rectangle Tool Selection Data all report `22.5125` (or the
-correct value at other points/windows), never the scaled `0.225`, across
-both a plain graph and a `commonX`-linked pair. The X-range zoom controls
-(N1) were re-tested alongside and are unaffected.
-
-## Documentation sweep, this pass
-
-Requested by the user directly: "update all documentation ... with current
-status." Covered every `.md`, `.tex` and the module docstring, plus
-`environment.yml`, not just this file.
-
-- **`environment.yml`**: dropped `scipy`, unused since the MATLAB reader
-  was removed (resolves N2).
-- **`README.md`**: dropped the MATLAB bullet from "What it does" (with a
-  note on why, and a pointer to the known `%`-header limitation); dropped
-  the dead range-slider link; dropped `scipy` from the two dependency/
-  license lines; fixed "To use as a module", which told a reader to import
-  a `DashPlotWindow` class that no longer exists.
-- **`dash-lineplot.py` module docstring**: the same `DashPlotWindow`
-  mistake existed here too (it's what `README.md`'s example was copied
-  from) -- fixed the same way. Also dropped `scipy` from the license header
-  and the dependency line, and the dead range-slider and Plotly-subplots
-  links. Rewrote the stale comment block above `setupCallbacks` that
-  described a removed `visdcc`/subplot hover mechanism attached to code
-  that no longer does that -- current hover sync is `assets/graphsync.js`,
-  already documented at the top of the file.
-- **`docs/userguide.md`**: removed the `.mat` row and the "scipy needed for
-  Matlab" requirement; replaced the stale "Matlab reader carried forward,
-  unverified" TODO with an accurate note that it was removed outright, not
-  carried forward; **added an explicit "known limitation, not the intended
-  design" callout** for N3 (the plain-CSV-without-`%` crash) rather than
-  either hiding it or silently documenting the crash as if it were the
-  spec; added a note under `Scale`/`Offset` stating the N6 guarantee
-  explicitly (values shown are always true, never scaled); rewrote the
-  "Rectangle Tool Selection Data" section to match N6's behaviour change.
-- **`doc/*.tex`** (`intro.tex`, `func.tex`, `system.tex`, `user.tex`,
-  `lic.tex`): this whole LaTeX guide describes a March-2020, Qt-desktop-
-  window, PyInstaller-packaged, Plotly-subplot version substantially
-  different from the current one, and until this pass carried no warning
-  saying so beyond a note in `docs/userguide.md` that a reader of the LaTeX
-  guide directly would never see. Added an explicit "this guide/chapter is
-  historical" notice to the Introduction and to the top of every affected
-  chapter, pointing at `docs/userguide.md` as current. Also fixed the
-  handful of plain-text factual errors that don't depend on regenerating
-  screenshots: the MATLAB bullet in `func.tex`, the licence and dependency
-  lists in `system.tex` (which no longer match `README.md`'s), the PySide/Qt
-  line in `lic.tex`'s LGPL section, and the "subplots" claim in `user.tex`'s
-  Click Data description. **What this pass did not do**: rewrite the
-  screenshots-and-figures narrative (the Slider Usage subsection, the
-  subplot-vs-no-subplot comparison figures, the PyInstaller folder-structure
-  figures) to describe the current UI -- that needs new screenshots this
-  session cannot produce, and the historical notice is judged sufficient to
-  stop the guide from being *mistaken* for current, which was the actual
-  risk. See WP8 below for whether a full rewrite is still worth doing.
-
-## Dead code, fourth pass
-
-Found by scanning the whole file with an AST pass over every function
-definition and every import, cross-checked against actual references, at
-the user's explicit request to remove "historic carry over code that has
-no further purpose":
-
-- `import os` (line ~183 before this pass) -- completely unused; every
-  file operation in the script now goes through `pathlib.Path`.
-- The `external_stylesheets` module-level variable and its stale comment
-  -- unused once N4's fix removed the last reader. This is N4, closed
-  properly this time (see the intro above for how it briefly regressed).
-- A commented-out, never-implemented `nearestSample_sorted` sketch.
-- `gridColour = 'lightgrey'` -- assigned, never read.
-- `allTabs`/`allGraphs`/`tabIndex` bookkeeping in `prepareGraphs` --
-  `allGraphs` was rebuilt every run via its own inner loop but never read
-  anywhere; `allTabs` no longer needs to be a module `global` since
-  nothing outside `prepareGraphs` reads it (the last outside reader was
-  the callback-registration loop this closed by using `graphList`
-  instead, a few sessions back); `tabIndex` was incremented and never
-  read at all. The loop is simplified back to what it actually needs.
-- The module docstring's ~90-line 2019 Dash-tutorial transcript (bullet
-  notes copied from `dash.plot.ly/getting-started`, plus a full
-  illustrative `Tabs`/`Div` code block) -- no project-specific content,
-  already flagged in this document's own WP8. Everything else in the
-  docstring (file types, requirements, "how to use as a module") stays.
-
-This closes item 12/13 below (the "Dead code" row) for real, and closes
-2.1 (the slider callbacks) as verified still gone -- your colleague's
-merge deleted that block outright rather than leaving it commented, which
-this document's second pass had not yet confirmed.
-
-## Deletions, fourth pass
-
-At the user's explicit direction, following a review-then-approve
-one-item-at-a-time process: the entire packaged-executable toolchain is
-deleted -- `pyInstaller/` (122 MB, 3012 tracked files), `dash-lineplot.spec`,
-`runPyInstaller.bat`, `startPlotTool.bat` -- closing items 21 and 22
-below outright rather than merely flagging them. `pythonSetup/` is also
-deleted: its content was accurate but fully redundant with
-`docs/userguide.md`'s own Installation section (which additionally covers
-running without `conda init`); its one piece of non-redundant content,
-the `conda env export --no-builds --from-history` guidance, was folded
-into `docs/userguide.md` before deletion so nothing was lost.
-`exmple-dash-config.xlsx` is deleted too -- it pointed at a tree outside
-this repository and could never be run here. `README.md` was updated at
-each point to drop the now-dead links and mentions. **`doc/*.tex` and
-`doc/pic/` were explicitly excluded from this round -- the user will
-remove that tree themselves.** See `archive-no-commit/handoff.md`'s file
-inventory table for the current, post-deletion picture.
+**Verification status:** findings are checked against the running
+application (conda env `dashplot`, `dash-lineplot.py -f dash-config.xlsx`
+and the other shipped configs), not just read from the source, unless a
+finding says otherwise.
 
 ## Priority summary
 
-| # | Item | Kind | Severity | Status |
-|---|---|---|---|---|
-| N1 | Every per-graph callback silently mis-wired (`itertools.chain(graphList)`) | Defect | Critical | **Closed** 2026-09-14, see above |
-| N2 | `.mat` support removed but still documented; `scipy` now an orphaned dependency | Defect/Stale | High | **Closed** 2026-09-14 -- documentation and `environment.yml` corrected |
-| N3 | `readdatafile` crashes on a plain CSV with no `%` header | Defect | High | **Closed** 2026-09-15 -- your colleague's own commit (`c9aa083`) added the `header=0` fallback; verified against all three fixture shapes (`%` header, no header, repeated `%` headers) |
-| N4 | Dead `external_stylesheets` module-level variable | Dead code | Low | **Closed** 2026-09-15 -- briefly regressed (reintroduced alongside `assets_folder`, double-loading the stylesheet again) and fixed properly this pass, see the intro above |
-| N5 | Axis labels missing on every graph (Plotly.js 4 needs `title: {text:...}`) | Defect | High | **Closed** 2026-09-14, see above |
-| N6 | Scale/Offset leaked into hover, click and selection values | Defect | High | **Closed** 2026-09-14, see above |
-| N7 | `graphs/` output directory never actually created (`Path(grDir).mkdir` missing its call) | Defect | Critical | **Closed** 2026-09-15 -- introduced by the colleague's commit, crashed the very first run on a fresh checkout; reproduced and fixed this pass |
-| N8 | Legend reserved a variable-width column outside the plot, misaligning stacked graphs' x axes | Defect | Medium | **Closed** 2026-09-15, user-reported with a screenshot -- legend anchored inside the plot's top-right corner instead |
-| 1 | *(was: data reader ran two branches)* | Defect | — | Closed |
-| 2 | *(was: `dfData` could be unbound)* | Defect | — | Closed by the same rewrite, see N3 |
-| 3 | *(was: `skiprows` reached -1)* | Defect | — | Closed |
-| 4 | File-type dispatch is substring-based | Defect | Medium | Partly done -- now case-folded (`.suffix.lower()`), still `'xls' in extension` / `'json' in extension` rather than equality |
-| 5 | *(was: `np.isnan` on text cells)* | Defect | — | Closed |
-| 6 | Logo path is relative and bypasses `resourcePath` | Defect | — | Closed by the colleague's commit -- now routed through `resourcePath`, read once at module import rather than per-tab. The file handle is still not closed via `with`, but that's a one-off at import time, not worth tracking separately. |
-| 7 | *(was: callbacks registered against components that never exist)* | Defect | — | Closed, see N1 |
-| 8 | Header `%` stripping applies to one format only | Inconsistency | Low | Mostly moot -- only one text reader remains, but still not normalised in `loadData` |
-| 9 | Missing/misspelled config names fail with raw pandas errors | Robustness | — | **Closed 2026-09-15**, see section 1.9 below |
-| 10 | *(was: stylesheet loaded twice)* | Defect | — | Closed, minor residue N4 |
-| 11 | Slider callbacks are dead | Dead code | — | Closed -- deleted outright by the colleague's merge, verified still gone this pass |
-| 12 | *(was: `jsString`, `allTabUsedIdx`, `reqStart`/`reqEnd` dead)* | Dead code | — | Closed |
-| 13 | Module-level `global` state instead of instance state | Structure | High | Open, unchanged |
-| 14 | Index strings parsed by `split('#')`/`split('-')`, Variable names compared by substring | Structure | Medium | Open, unchanged |
-| 15 | Config walk is row-by-row `.loc` plus `concat` | Performance | Medium | Open, unchanged |
-| 16 | Full trace data duplicated into `self.graphTraces` | Performance | Medium | Open, unchanged |
-| 17 | `list(ys)[index]` per trace per click | Performance | Medium | Open, unchanged (now also in `commonClickMessage`) |
-| 18 | HTML copies of every graph written by default | Behaviour | Medium | Open -- `toDisk` still defaults `True`; `.gitignore` still names the wrong flag |
-| 19 | Config workbook opened twice | Performance | Low | Open, unchanged |
-| 20 | Canonical-column/sheet-filter logic duplicated (script vs. `tools/xlsx_config_to_json.py`) | Duplication | Medium | Open, unchanged -- reprioritised (xlsx-first), see WP5 note |
-| 21 | PyInstaller spec still describes the Qt build | Stale | — | **Closed 2026-09-15** -- `dash-lineplot.spec`, `runPyInstaller.bat`, `startPlotTool.bat` deleted |
-| 22 | 122 MB vendored third-party tree, 1229 tracked `.pyc` | Hygiene | — | **Closed 2026-09-15** -- `pyInstaller/` deleted |
-| 23 | No tests, no `pyproject.toml`, no linter config | Hygiene | High | Open -- and N1 is the demonstration of why this matters |
-| 24 | `doc/*.tex` documents removed features | Stale | Medium | Partly done -- every chapter now carries an explicit "historical, superseded" notice pointing at `docs/userguide.md`, and the plain-text factual errors (licences, dependencies, MATLAB) are corrected; the screenshots-and-figures narrative (slider, subplots, PyInstaller packaging) is not rewritten |
-| 25 | Modern-Python items | Modernisation | Low | Partly done, see the closed-items table; remainder below |
+| # | Item | Kind | Severity |
+|---|---|---|---|
+| 1 | Module-level `global` state instead of instance state | Structure | High |
+| 2 | Index strings parsed by `split('#')`/`split('-')`; `Variable` names compared by substring | Structure | Medium |
+| 3 | Canonical-column/sheet-filter logic duplicated (script vs. `tools/xlsx_config_to_json.py`) | Duplication | Medium |
+| 4 | No tests, no `pyproject.toml`, no linter config | Hygiene | High |
+| 5 | Config walk is row-by-row `.loc` plus `concat` | Performance | Medium |
+| 6 | Full trace data duplicated into `self.graphTraces` | Performance | Medium |
+| 7 | Per-click work is linear, uncached | Performance | Medium |
+| 8 | HTML copies of every graph written by default | Behaviour | Medium |
+| 9 | Config workbook opened twice | Performance | Low |
+| 10 | File-type dispatch is still substring-based | Defect | Low |
+| 11 | Header `%` stripping lives in one reader, not normalised centrally | Inconsistency | Low |
+| 12 | `suppress_callback_exceptions` is broader than it needs to be | Robustness | Low |
+| 13 | Modern-Python remainder (see list) | Modernisation | Low |
 
 ---
 
-## 1. Defects still open
+## 1. Structural problems
 
-### 1.4 File-type dispatch is still substring-based
+### 1.1 Module-level `global` state
+
+Six `global` statements still carry per-instance state into module scope
+(down from eleven in the original review -- the other five were
+`allTabs`, `allGraphs`, `sliderMinValues`, `sliderMaxValues` and
+`tabIndex`, all deleted as dead code rather than fixed structurally, see
+`closed-history.md`).
+
+| Global | Set in | Read in |
+|---|---|---|
+| `dfPlotterHeader` | `loadConfig:1417-1418` | `makeGraphSet:852-853`, `loadConfig:1421,1427-1428` |
+| `dfPlotterConfig` | `loadConfig:1436-1437,1478` | `prepareGraphs:1300,1306`, `loadData:1553-1555` |
+| `pageDensity` | `loadConfig:1425-1426,1430` | `makeGraphSet:1180,1204`, `makePage:1377` |
+| `divSets` | `prepareGraphs:1285,1291,1316` | `makePage:1344`, `render_content:1681` |
+| `graphTabs` | `prepareGraphs:1286,1294,1318` | `makePage:1346` |
+| `graphList` | `prepareGraphs:1287,1297,1317` | `setupCallbacks:1686` |
+| `dashApp` | `runDash:1627-1628` | throughout `runDash`, and `runPlotter:1989` |
+
+Consequences, in order of how much they cost:
+
+- Two `DashLinePlot` instances in one process overwrite each other's
+  configuration and page. The module docstring advertises exactly that
+  use ("To use as a module in another application"), so the documented
+  API is not safe to use twice.
+- `makeGraphSet` reads `dfPlotterHeader` and `pageDensity` out of module
+  scope while taking `dft` as an argument, so its inputs are half explicit
+  and half ambient. Nothing about the signature says what it needs.
+- A callback closure reading `divSets` (`render_content:1681`) depends on
+  `prepareGraphs` having run first, with no way to assert it.
+
+Fix: make all of them instance attributes -- `self.divSets`, `self.config`
+(`dfPlotterConfig`), `self.header` (`dfPlotterHeader`), `self.density`
+(`pageDensity`), `self.graphTabs`, `self.graphList`, `self.dashApp`. The
+callback definitions already live in a method (`setupCallbacks`) and close
+over `self` naturally. This is mechanical, touches many lines, and is the
+single largest structural improvement available. Do it in its own commit,
+no behaviour change alongside it, and only after tests exist (item 4)
+since nothing currently exercises `setupCallbacks`/`graphList` outside a
+human clicking around in a browser -- see `closed-history.md`'s N1 entry
+for what a silent regression in exactly this code already cost once.
 
 ```python
-extension = Path(datapath).suffix.lower()    # line 1571 (case-folding now done)
-if 'xls' in extension: ...                   # line 1578
-elif 'json' in extension: ...                # line 1583
+# Sketch: wrap the related module-level state in the instance itself,
+# rather than a separate context object -- DashLinePlot already is that
+# object, it just doesn't use itself consistently yet.
+class DashLinePlot:
+    def __init__(self):
+        ...
+        self.header = pd.DataFrame()
+        self.config = pd.DataFrame()
+        self.density = 'compact'
+        self.divSets = []
+        self.graphTabs = []
+        self.graphList = []
+        self.dashApp = None
 ```
 
-The case-sensitivity half of this is fixed. The substring half is not: an
-extension containing `xls` or `json` as a substring of something else would
-still misdispatch, though in practice this is now low-risk since the set of
-extensions actually reaching this code is small and controlled by the
-config. Low effort, low payoff -- fold into whichever change next touches
-this block rather than doing it alone.
+### 1.2 Index strings parsed by splitting
 
-### 1.9 Missing or misspelled configuration names -- closed this pass
+The configuration index encodes set and trace numbers into the row label,
+`yValue#003-007`, and the graph code takes it apart with string surgery:
 
-Was: "the single largest usability return available." Closed this session
-at the user's request to harden the code against bogus or missing config
-data. `makeGraphSet` now checks, before touching `self.datafiles` or a
-`DataFrame`'s columns: a `Datafile` that is `None` or names nothing that
-was loaded, an `xValue`/`yValue` naming a column that doesn't exist in the
-resolved file, and a `Title` with no `yLabel` row under it. Each raises a
-`ValueError` naming the sheet, the offending value, and (for a column
-name) every column the file actually has. `readConfigTables`'s JSON
-branch similarly checks for a missing top-level `header` or `sheets` key
-before indexing into either. Verified by deliberately breaking a copy of
-`dash-config.xlsx` three ways (bad `xValue`, bad `Datafile`, missing
-`yLabel`) and confirming each produces the intended message, e.g.:
-
-```text
-ValueError: Sheet 'graph-RelativePosition': xValue 'CurrentSimTime_TYPO'
-is not a column of data/tp05j2a.rgeo. Columns available: CurrentSimTime,
-Rel-distance, Rel-speed, ...
+```python
+setStr = str(index).split('#')[1].split('-')[0]     # dash-lineplot.py:929
+setStr = str(index).split('#')[1]                   # dash-lineplot.py:1064
 ```
 
-Not covered, and still worth doing if this area is revisited: a `.loc`
-lookup against a *duplicate* index label (two `yLabel` rows under one
-`Title`) returns a Series rather than a scalar and would behave oddly
-rather than raising a clear error; low-likelihood, not exercised.
-`cellFlag` already exist to build a validator on top of.
+Membership is then tested by substring rather than equality:
+`'Datafile' in var_name`, `'Title' in var_name`, `'yLabel' in var_name`,
+`'yValue' in var_name` (`dash-lineplot.py:1457,1464,1467,1470`) -- so a
+`Variable` named `SubTitle` or `DatafileB` would be taken for a `Title` or
+a `Datafile` row. The tab label is derived as `graphTab.split('-')[1]`
+(`dash-lineplot.py:1318`), which truncates any sheet named
+`graph-my-signals` to `my`.
 
-### 1.11 `suppress_callback_exceptions` still hides the class of bug N1 was
+Fix: carry set and trace numbers as their own integer columns --
+`SetNum`, `TraceNum` -- alongside the existing `Graph` and `ShtNum`
+columns, and select with `dft[dft['SetNum'] == n]` instead of parsing a
+label. Compare `Variable` names with `==`. Use
+`graphTab.split('-', 1)[1]` or `graphTab.removeprefix('graph-')` for the
+tab label. Do this against the xlsx path's own test fixtures first, per
+the standing decision -- that is the path every real configuration in
+this project uses.
 
-This is what let N1 run silently for however long it was live. Noted as a
-`# todo` comment in the code already (`dash-lineplot.py:1629-1631`). Worth
-promoting from a comment to a tracked item: once callback registration is
-driven only by `graphList` (which it now is, since N1's fix), the dynamic
-content that still needs suppression is just the tab-switch `children`
-output. Scoping suppression to that one callback, rather than the whole
-app, would have surfaced N1 immediately as a startup error instead of a
-silent no-op button.
+### 1.3 Duplicated configuration logic
 
-## 2. Dead code, revisited
+`readConfigTables` (`dash-lineplot.py:495`) and `workbookToDict` in
+`tools/xlsx_config_to_json.py` each implement the `'graph' in sheetname`
+sheet filter and the openpyxl-for-sheet-order trick, and
+`CONFIG_COLUMNS`/`onCanonicalColumns` exist only in the former while the
+latter has its own `cellValue`/`isEmpty` pair covering similar ground to
+`cellFloat`/`cellText`/`cellFlag`.
 
-### 2.1 The slider callbacks are commented out, not deleted
+Fix: extract a small `configio.py` beside the script holding
+`CONFIG_COLUMNS`, the sheet filter, the workbook reader and the cell
+helpers, and import it from both. That also makes the config layer
+testable without importing Dash. Note while doing so that the sheet
+filter is itself a substring test: `'graph' in sn` matches a sheet named
+`paragraphs`. `sn.startswith('graph-')` is what is meant, and should be
+defined once. Per the standing decision, only do this if it serves the
+xlsx path -- do not extend it chasing JSON/xlsx parity for its own sake.
 
-`dash-lineplot.py:1934` onward still carries `process_xSlider_data` and
-`reset_xSlider` in full, as a `#`-commented block, rather than removed as
-the original review recommended. Functionally equivalent to deletion --
-nothing executes -- but it is 90-odd lines of commentary on a feature three
-generations removed (Qt slider -> range slider -> current range boxes),
-and it is what a future reader will assume is one uncomment away from
-working when it is not (`sliderMinValues`/`sliderMaxValues` are the only
-things still computed for it). Low-risk deletion, any time.
+## 2. Performance
 
-## 3. Structural problems -- all still open
+Ordered by what a large data set actually costs. No data set large enough
+to make any of these visible has been run against the current code, so
+severity is "worth doing, not urgent" throughout -- measure with the
+largest run available before investing in any of them.
 
-Section unchanged from the first review: 11 `global` statements carrying
-class state at module scope, index strings parsed by `split('#')`/
-`split('-')`, `'Title' in var_name`-style substring tests standing in for
-equality (`dash-lineplot.py:1463` and siblings), and the tab label still
-truncating at the first `-` (`graphTab.split('-')[1]`, line 1317). Nothing
-here regressed and nothing here was touched. See the original document's
-text for the full detail; it still applies verbatim. The one thing worth
-adding, given the standing decision above: **do the `SetNum`/`TraceNum`
-column work (3.2) against the xlsx path's test fixtures first** if WP6 and
-WP5 proceed, since that is the path every real configuration in this
-project uses.
+### 2.1 The configuration walk
 
-## 4. Performance -- all still open
+`loadConfig` iterates each sheet row by row and writes back through `.loc`
+on every iteration, then grows the master frame with `pd.concat` inside
+the sheet loop (`dash-lineplot.py:1478`). Both are standard pandas
+anti-patterns: each `.loc` assignment on a mixed-dtype frame can copy, and
+each `concat` reallocates everything accumulated so far.
 
-Unchanged: the row-by-row `.loc` config walk with per-sheet `concat`
-(4.1), the full trace duplication into `self.graphTraces` (4.2, now also
-read via the newer `commonClickMessage`/`commonSelectMessage` helpers that
-did not exist at the first review -- same cost, same fix), `list(ys)[index]`
-materialising a full column per click (4.3), `toDisk` defaulting to `True`
-(4.4, and the `.gitignore` comment still says `GraphToDisk` while the code
-reads `ToDisk`), the workbook opened twice (4.5), and all tabs built up
-front despite the comment claiming otherwise (4.6). No data set large
-enough to make these visible has been run against the current code in this
-session, so severity is unchanged from "worth doing, not urgent" -- measure
-before investing, as WP7 already said.
+Fix: build the index labels as a list comprehension over the rows, assign
+the column once, and collect the per-sheet frames in a list for a single
+`pd.concat(frames)` after the loop. This is also where the `SetNum`/
+`TraceNum` columns of 1.2 naturally get built.
 
-## 5. Modern Python -- remainder
+### 2.2 Trace data duplicated for the click/selection readout
 
-Closed items are in the table above. Also closed since the last review:
+```python
+self.graphTraces[grID] = [                                # dash-lineplot.py:1218
+    (trace.get('name', ''), trace['x'], trace.get('customdata'),
+     trace.get('text'))
+    for trace in thisGraphData]
+```
 
-- `resourcePath`'s fallback -- `base_path = Path(__file__).resolve().parent`,
-  fixed by the colleague's commit. The `try: sys._MEIPASS / except
-  Exception` structure itself is unchanged and could still become
-  `getattr(sys, '_MEIPASS', None)`, but that's style, not the bug 1.6
-  originally flagged.
-- `os.path` vs `pathlib.Path` inconsistency -- resolved completely rather
-  than folded in piecemeal: `import os` was unused dead weight (removed
-  this pass, see "Dead code, fourth pass" above) and `os.mkdir(grDir)`
-  became `Path(grDir).mkdir()` (N7 above). The file now uses `pathlib`
-  exclusively; there is no second idiom left to reconcile.
+Every graph's full x and customdata (which itself carries both true x and
+true y per point, see `closed-history.md`'s N6 entry) is retained for the
+lifetime of the process so a `commonX` click or a rectangle selection can
+be answered. For a large trace this is a second copy of the data, held
+per graph rather than per data file.
 
-Still open:
-- `dash.callback_context` is still used at three sites (lines 1712, 1828,
-  1894) rather than `dash.ctx`/`ctx.triggered_id`.
-- The four-element magic-index click history (`self.clickedData[graphId][3][0]`,
-  `dash-lineplot.py:1853` on) is unchanged; `commonClickMessage`
-  (added since the first review) already solved the same problem with a
-  plain two-element list and reads far better -- worth folding
-  `display_click_data` onto the same shape rather than maintaining both.
-- Type hints on the module-level helpers: still none. The helper set has
-  grown since the first review (`cellFloat`, `cellText`, `cellFlag` all
-  postdate it) and all three are exactly the kind of small, pure function
-  hints pay for immediately.
-- `print()` for error reporting: unchanged, still three sites.
-- Naming: still deliberately camelCase and consistent; still leave it, per
-  the first review's own reasoning.
+Fix: store what identifies the trace -- data reference, x column, y
+column, scale and offset -- and read values back from `self.datafiles` on
+demand. The frames are already in memory.
 
-## 6. Repository hygiene -- 6.1 and 6.2 closed this pass
+### 2.3 Per-click work is linear and uncached
 
-`dash-lineplot.spec`, `runPyInstaller.bat` and `startPlotTool.bat` (6.1),
-and the 122 MB, 3012-file vendored `pyInstaller/` tree (6.2), are deleted
--- see "Deletions, fourth pass" above. `pythonSetup/` and
-`exmple-dash-config.xlsx` are gone too, though neither was originally
-listed under 6.1/6.2 specifically.
+`commonClickMessage` (`dash-lineplot.py:595`) calls `nearestSample` for
+every trace of every graph in a `commonX` group on every click, and
+`nearestSample` (`dash-lineplot.py:387`) builds a fresh `np.asarray` over
+the whole x column each time.
 
-Still open: no test, no `pyproject.toml`, no `requirements.txt`, no linter
-configuration (6.3). Now that N3 is closed by the colleague's fix, its
-fixture (a plain CSV with no `%` header) is a regression test worth
-writing rather than a currently-undetected crash to guard against -- the
-crash itself is fixed, but nothing stops it recurring silently.
+Fix: cache the `numpy` x array per trace at build time. For a monotonic x
+-- which a time column is -- `np.searchsorted` answers in logarithmic
+rather than linear time, and monotonicity can be checked once at load.
+`commonSelectMessage` has the same per-call `np.asarray` cost.
 
-## 7. Stale documentation -- largely addressed this pass
+### 2.4 HTML copies written on every run by default
 
-The plain-text factual errors this section originally listed are fixed:
-`README.md`'s range-slider and `DashPlotWindow` references, the module
-docstring's matching mistakes, and `doc/system.tex`'s licence/dependency
-lists (PySide, visdcc, Qt, `scipy`) are all corrected, and every LaTeX
-chapter now says plainly that it is historical and points at
-`docs/userguide.md`. N2 (the `.mat` doc mismatch) is closed -- see the
-"Documentation sweep" section above for the full list of files touched.
+`toDisk` defaults to `True` (`dash-lineplot.py:862`), so every graph of
+every included tab is written to `./graphs/` as a standalone HTML file on
+every start-up, whether or not anyone asked. Each file embeds its own copy
+of the data and of the Plotly bundle.
 
-**What is not done**: the LaTeX guide's screenshots and the prose built
-around them -- `doc/user.tex`'s Slider Usage subsection and its subplot-
-vs-no-subplot comparison figures, `doc/system.tex`'s PyInstaller
-folder-structure figures -- still describe the 2020 UI, because doing this
-properly needs new screenshots of the current browser display, which this
-pass could not produce. The historical notice on each chapter is judged
-sufficient to stop a reader from mistaking the content for current; a full
-rewrite is downgraded to optional in WP8 below rather than dropped, since
-`docs/userguide.md` is now the complete, accurate, actively maintained
-guide and the LaTeX document's main remaining value is the PDF export
-workflow itself, not any content unique to it.
+Note also that `.gitignore` describes the directory as "Generated by
+graphToDisk when a sheet sets GraphToDisk" (`.gitignore:9`), but the flag
+the code reads is `ToDisk`. One of the two names is wrong.
 
-## 8. Suggested order of work
+Fix: default `toDisk` to `False` -- exporting is an explicit request, not
+a side effect of viewing -- and reconcile the flag name between the code,
+the `.gitignore` comment and `docs/userguide.md`.
 
-Revised from the first review: N1 is done, and the user's standing
-decision to keep xlsx as the primary, maintained format reprioritises the
-JSON-adjacent parts of WP5.
+### 2.5 The configuration workbook is opened twice
 
-### WP1 -- Deletions: closed
+`readConfigTables` builds a `pd.ExcelFile` and then calls
+`oxl.load_workbook(configfile)` (`dash-lineplot.py:538`) for the sheet
+order, parsing the file twice. `pd.ExcelFile` already holds the openpyxl
+workbook as its `.book`, so the order is available without a second read.
+The same duplication exists in `tools/xlsx_config_to_json.py`.
 
-Section 2.1 (the slider callbacks) was deleted outright by the
-colleague's merge; 6.1 and 6.2 (the PyInstaller toolchain and vendored
-tree), N4 (the dead `external_stylesheets` variable), and this pass's own
-further finds (`import os`, `gridColour`, the `nearestSample_sorted`
-sketch, `allTabs`/`allGraphs`/`tabIndex`, the module-docstring tutorial
-transcript) are all closed this session. `pythonSetup/` and
-`exmple-dash-config.xlsx`, not originally in this work package, were
-deleted alongside 6.1/6.2 at the user's direction. Nothing here changed
-behaviour.
+## 3. Small, independent items
 
-### WP2 -- Data-path correctness
+### 3.1 File-type dispatch is still substring-based
 
-Closed. N2 and N3 are both fixed (the latter by the colleague's commit,
-verified this session against all three fixture shapes).
+```python
+extension = Path(datapath).suffix.lower()    # dash-lineplot.py:1582 (case-folding now done)
+if 'xls' in extension: ...
+elif 'json' in extension: ...
+```
 
-### WP3 -- Asset and start-up fixes
+Case-sensitivity is fixed (`.suffix.lower()`). The substring half is not:
+an extension containing `xls` or `json` as a substring of something else
+would still misdispatch, though in practice this is low-risk since the
+set of extensions reaching this code is small and controlled by the
+config. Fold into whichever change next touches this block rather than
+doing it alone.
 
-1.6 (logo path) is closed. What remains: 1.4's residual substring
-dispatch, 4.4, 4.5. Small, independent, immediately visible in start-up
-time and in "does it work when launched from a shortcut/cron/other cwd".
+### 3.2 Header `%` stripping lives in one reader only
 
-### WP4 -- Validation and error reporting: closed
+The leading-`%` strip sits inside `readdatafile`, which is now the only
+text-format reader (the old multi-branch dispatch that made this
+inconsistent across formats is gone). Mostly moot as a defect, but still
+not normalised centrally in `loadData` the way a reader-agnostic column
+clean-up would be.
 
-Section 1.9 is done -- see its text above for what is and isn't covered.
+### 3.3 `suppress_callback_exceptions` is broader than it needs to be
 
-### WP5 -- Structure
+Set unconditionally in `runDash` (`dash-lineplot.py:1641`), with a `#
+todo` comment already in the code next to it. Now that callback
+registration is driven only by `graphList` (the graphs actually on the
+page), the only dynamic content that still needs suppression is the
+tab-switch `children` output (`render_content`). Scoping suppression to
+that one callback, rather than the whole app, would surface the next id
+mismatch as a startup error instead of a silent no-op -- exactly the
+failure mode `closed-history.md`'s N1 entry describes.
 
-Sections 3.1 to 3.4, 4.1. Globals onto the instance, `SetNum`/`TraceNum` as
-columns, `configio.py` extraction. Reprioritised: do the xlsx-side
-extraction and structure work; do not extend it to close JSON/xlsx parity
-gaps unless a gap actively blocks the xlsx path. This is still the largest
-and riskiest package -- do it after WP6, one concern per commit.
+### 3.4 Modern-Python remainder
 
-### WP6 -- Tests and tooling
+- `dash.callback_context` is still used at three sites (`apply_ranges`,
+  `display_common_click_data`, `display_common_selected_data`) rather
+  than `dash.ctx`/`ctx.triggered_id`.
+- The four-element magic-index click history
+  (`self.clickedData[graphId][3][0]` and siblings, in
+  `display_click_data`) is unchanged; `commonClickMessage` already solves
+  the same problem with a plain two-element list and reads far better --
+  worth folding `display_click_data` onto the same shape rather than
+  maintaining both.
+- Type hints on the module-level helpers: still none. `cellFloat`,
+  `cellText`, `cellFlag`, `splitDataRef`, `readJsonData`, `traceYExtent`,
+  `nearestSample`, `isEnumSeries`, `parseCategories`, `enumCategories`,
+  `isJsonConfig` are all small, pure functions -- exactly where a type
+  hint pays for itself immediately.
+- `print()` for error reporting: still used at three sites (a missing
+  data file, an unrecognised `Density` value). Consider the `logging`
+  module, or at minimum `file=sys.stderr`, so a caller embedding the
+  plotter as a module can control it.
+- Naming is camelCase throughout, against PEP 8 but consistent and
+  deliberate -- leave it. Consistency with the existing file beats
+  conformance here, and a rename would obscure every future diff.
 
-Section 6.3, plus the fixture WP2 needs (plain-CSV-no-`%`, from N3; a
-`.mat` fixture is no longer relevant now that N2 is closed as "removed"
-rather than "restore"). N1 is the concrete argument for pulling this
-forward: a one-token change silently broke every button on the page,
-with no exception anywhere, because nothing exercised
-`setupCallbacks`/`graphList` outside a human clicking around in a browser.
-A test as simple as "build the callback graph for the shipped
-`dash-config.xlsx` and assert every registered `Output`/`Input`/`State` id
-exists in the rendered layout" would have caught both N1's regression and
-the original item 1.7 it replaced.
+## 4. Repository hygiene
 
-### WP7 -- Performance
+No test of any kind, no `pyproject.toml`, no `requirements.txt`, no
+linter or formatter configuration. `environment.yml` is the only
+dependency declaration, and it is conda-only.
 
-Unchanged: sections 4.2, 4.3, 4.6. Measure with the largest run available
-before investing.
+The absence of tests is what makes every structural item above riskier
+than it needs to be. Fix, in the order that pays off soonest:
 
-### WP8 -- Documentation
+1. A `pyproject.toml` with `[tool.ruff]` configured to the file's actual
+   style. `ruff` would have caught most of the dead-code items closed in
+   `closed-history.md`'s pass 4 automatically, and finds the
+   unbound-variable class of defect that N3 (also closed) once was.
+2. `pytest` tests for the pure helpers, which need neither Dash nor a
+   browser: `splitDataRef`, `readJsonData` on all three shapes and all
+   three error paths, `parseCategories`, `enumCategories` (including the
+   append-unknown-states rule), `isEnumSeries`, `selectionBounds` (box and
+   lasso), `nearestSample`, `traceYExtent`, `resolveSetContexts` (a
+   multi-block sheet), and `readConfigTables` on a workbook and its
+   converted JSON -- the last of which also regression-tests that the two
+   formats agree.
+3. Round-trip tests for `readdatafile` over small fixtures: a `%` header
+   with and without a leading space, a `%` header containing a comma, a
+   comma file, an uppercase extension, a plain CSV with no `%` header at
+   all (the fixture shape N3 needed -- its crash is fixed, but nothing
+   currently stops it recurring silently), and a file with several
+   repeated `%` header lines (the shape `data/sensor-tel-test3.txt`
+   exercises).
+4. A test that builds the callback graph for the shipped
+   `dash-config.xlsx` and asserts every registered `Output`/`Input`/
+   `State` id exists in the rendered layout. This is the concrete test
+   that would have caught the N1 regression in `closed-history.md`
+   immediately, as a startup failure, instead of a silent no-op button a
+   human had to notice.
+5. A `pip`-installable declaration alongside `environment.yml`, so the
+   package can be installed without conda.
 
-Largely done this pass -- see Section 7 and "Documentation sweep" above.
-What is left is optional: a full rewrite of `doc/user.tex`'s and
-`doc/system.tex`'s screenshots-and-figures content (new screenshots of the
-current browser UI, dropping the slider/subplot/PyInstaller narrative
-rather than just flagging it historical). Worth doing only if the LaTeX
-PDF itself is still wanted as a deliverable; if `docs/userguide.md` is
-sufficient going forward, this can be deprioritised indefinitely rather
-than scheduled.
+## 5. Suggested order of work
 
-### Modernisation
+1. **Tests and tooling** (section 4) -- do this before the structural
+   work below, not after. `ruff` plus the helper tests are worth having
+   regardless of what else happens next, and the callback-graph test
+   specifically de-risks item 1.1.
+2. **Structure** (section 1) -- globals onto the instance, `SetNum`/
+   `TraceNum` as columns, the `configio.py` extraction. The largest and
+   riskiest package here; one concern per commit, no behaviour changes
+   mixed in.
+3. **Performance** (section 2) -- only after measuring with the largest
+   run available. None of it is urgent on the data sets this repository
+   ships.
+4. **Small, independent items** (section 3) and **hygiene follow-through**
+   (defaulting `toDisk` to `False`, the `.gitignore` wording, the
+   substring dispatch) can happen any time, in whatever commit next
+   touches the relevant code -- none of them need their own dedicated
+   session.
 
-Section 5's remainder is still not a work package on its own -- fold each
-item into whichever package touches that code.
+`doc/*.tex` (the LaTeX guide) is intentionally absent from this plan: the
+user has said they will remove that tree themselves, and no further
+automated work on it is expected. See `archive-no-commit/handoff.md`'s
+file inventory table for its status.
