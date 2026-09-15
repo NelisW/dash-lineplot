@@ -1,6 +1,6 @@
 ---
 title: "dash-lineplot: Suggested Work"
-date: "2026-09-14 (third pass)"
+date: "2026-09-15 (fourth pass)"
 pdf-engine: lualatex
 style: |
   .markdown-preview.markdown-preview {
@@ -33,16 +33,37 @@ modernisation opportunities, with a recommended order of work.
 
 Markdown flavour for this file: Native/KaTeX, with PDF-export front matter.
 
-This is the third pass over this document. The first pass (2026-09-11,
-commit `3bc7304`) was read-only. The second pass, earlier the same day,
+This is the fourth pass over this document. The first pass (2026-09-11,
+commit `3bc7304`) was read-only. The second pass, later the same day,
 found and fixed the broken-callbacks defect (N1 below) while fixing an
-unrelated zoom-controls bug the user reported. This third pass, later the
-same day, fixes two more user-reported defects -- missing axis labels (N5)
-and Scale/Offset leaking into every hover/click/selection value (N6) -- and
-then does a documentation sweep across the whole repository (not just this
-file) at the user's request, since by this point the gap between what the
-docs claimed and what the code did had grown in more than one place. Every
-item below has been re-checked against the current code and docs and marked
+unrelated zoom-controls bug the user reported. The third pass, later
+again the same day, fixed two more user-reported defects -- missing axis
+labels (N5) and Scale/Offset leaking into every hover/click/selection
+value (N6) -- then did a documentation sweep across the whole repository
+at the user's request.
+
+This fourth pass (2026-09-15) follows a colleague's own commit
+(`c9aa083`), merged without conflict, which fixed the `readdatafile`
+no-`%`-header crash (N3, closed below) among other things, but also
+reintroduced two regressions this session found and fixed again: the
+`graphs/` output directory was never actually created
+(`Path(grDir).mkdir` was missing its call parentheses, crashing the very
+first run on a fresh checkout), and `external_stylesheets` was
+reintroduced alongside `assets_folder` (double-loading the stylesheet,
+closing N4 the wrong way before this pass closed it correctly). This pass
+also: removed a further round of dead code the user asked for by name
+(see the new "Dead code, fourth pass" section); hardened the config-error
+paths the user asked to be hardened against bogus/missing data (Datafile,
+xValue/yValue column names, a Title with no yLabel row, a JSON config
+missing `header`/`sheets`); fixed a legend-alignment defect the user
+reported with a screenshot (the legend's variable outside-the-plot width
+was making stacked graphs' x axes not line up at the right edge); and,
+at the user's explicit direction, deleted the entire packaged-executable
+toolchain (`pyInstaller/`, `dash-lineplot.spec`, the two `.bat`
+launchers), the now-redundant `pythonSetup/`, and `exmple-dash-config.xlsx`
+-- see the "Deletions, fourth pass" section. The LaTeX guide under `doc/`
+was deliberately left alone: the user will remove it themselves. Every
+item below has been re-checked against the current code and marked
 **Closed**, **Open**, **Partly done** or **New**.
 
 **Standing decision, recorded 2026-09-14:** the xlsx configuration path is
@@ -282,26 +303,80 @@ status." Covered every `.md`, `.tex` and the module docstring, plus
   stop the guide from being *mistaken* for current, which was the actual
   risk. See WP8 below for whether a full rewrite is still worth doing.
 
+## Dead code, fourth pass
+
+Found by scanning the whole file with an AST pass over every function
+definition and every import, cross-checked against actual references, at
+the user's explicit request to remove "historic carry over code that has
+no further purpose":
+
+- `import os` (line ~183 before this pass) -- completely unused; every
+  file operation in the script now goes through `pathlib.Path`.
+- The `external_stylesheets` module-level variable and its stale comment
+  -- unused once N4's fix removed the last reader. This is N4, closed
+  properly this time (see the intro above for how it briefly regressed).
+- A commented-out, never-implemented `nearestSample_sorted` sketch.
+- `gridColour = 'lightgrey'` -- assigned, never read.
+- `allTabs`/`allGraphs`/`tabIndex` bookkeeping in `prepareGraphs` --
+  `allGraphs` was rebuilt every run via its own inner loop but never read
+  anywhere; `allTabs` no longer needs to be a module `global` since
+  nothing outside `prepareGraphs` reads it (the last outside reader was
+  the callback-registration loop this closed by using `graphList`
+  instead, a few sessions back); `tabIndex` was incremented and never
+  read at all. The loop is simplified back to what it actually needs.
+- The module docstring's ~90-line 2019 Dash-tutorial transcript (bullet
+  notes copied from `dash.plot.ly/getting-started`, plus a full
+  illustrative `Tabs`/`Div` code block) -- no project-specific content,
+  already flagged in this document's own WP8. Everything else in the
+  docstring (file types, requirements, "how to use as a module") stays.
+
+This closes item 12/13 below (the "Dead code" row) for real, and closes
+2.1 (the slider callbacks) as verified still gone -- your colleague's
+merge deleted that block outright rather than leaving it commented, which
+this document's second pass had not yet confirmed.
+
+## Deletions, fourth pass
+
+At the user's explicit direction, following a review-then-approve
+one-item-at-a-time process: the entire packaged-executable toolchain is
+deleted -- `pyInstaller/` (122 MB, 3012 tracked files), `dash-lineplot.spec`,
+`runPyInstaller.bat`, `startPlotTool.bat` -- closing items 21 and 22
+below outright rather than merely flagging them. `pythonSetup/` is also
+deleted: its content was accurate but fully redundant with
+`docs/userguide.md`'s own Installation section (which additionally covers
+running without `conda init`); its one piece of non-redundant content,
+the `conda env export --no-builds --from-history` guidance, was folded
+into `docs/userguide.md` before deletion so nothing was lost.
+`exmple-dash-config.xlsx` is deleted too -- it pointed at a tree outside
+this repository and could never be run here. `README.md` was updated at
+each point to drop the now-dead links and mentions. **`doc/*.tex` and
+`doc/pic/` were explicitly excluded from this round -- the user will
+remove that tree themselves.** See `archive-no-commit/handoff.md`'s file
+inventory table for the current, post-deletion picture.
+
 ## Priority summary
 
 | # | Item | Kind | Severity | Status |
 |---|---|---|---|---|
 | N1 | Every per-graph callback silently mis-wired (`itertools.chain(graphList)`) | Defect | Critical | **Closed** 2026-09-14, see above |
 | N2 | `.mat` support removed but still documented; `scipy` now an orphaned dependency | Defect/Stale | High | **Closed** 2026-09-14 -- documentation and `environment.yml` corrected |
-| N3 | `readdatafile` crashes on a plain CSV with no `%` header | Defect | High | Open (new shape of old item 1.2) -- now clearly flagged in `docs/userguide.md` as a known limitation rather than silently documented as spec |
+| N3 | `readdatafile` crashes on a plain CSV with no `%` header | Defect | High | **Closed** 2026-09-15 -- your colleague's own commit (`c9aa083`) added the `header=0` fallback; verified against all three fixture shapes (`%` header, no header, repeated `%` headers) |
+| N4 | Dead `external_stylesheets` module-level variable | Dead code | Low | **Closed** 2026-09-15 -- briefly regressed (reintroduced alongside `assets_folder`, double-loading the stylesheet again) and fixed properly this pass, see the intro above |
 | N5 | Axis labels missing on every graph (Plotly.js 4 needs `title: {text:...}`) | Defect | High | **Closed** 2026-09-14, see above |
 | N6 | Scale/Offset leaked into hover, click and selection values | Defect | High | **Closed** 2026-09-14, see above |
+| N7 | `graphs/` output directory never actually created (`Path(grDir).mkdir` missing its call) | Defect | Critical | **Closed** 2026-09-15 -- introduced by the colleague's commit, crashed the very first run on a fresh checkout; reproduced and fixed this pass |
+| N8 | Legend reserved a variable-width column outside the plot, misaligning stacked graphs' x axes | Defect | Medium | **Closed** 2026-09-15, user-reported with a screenshot -- legend anchored inside the plot's top-right corner instead |
 | 1 | *(was: data reader ran two branches)* | Defect | — | Closed |
 | 2 | *(was: `dfData` could be unbound)* | Defect | — | Closed by the same rewrite, see N3 |
 | 3 | *(was: `skiprows` reached -1)* | Defect | — | Closed |
 | 4 | File-type dispatch is substring-based | Defect | Medium | Partly done -- now case-folded (`.suffix.lower()`), still `'xls' in extension` / `'json' in extension` rather than equality |
 | 5 | *(was: `np.isnan` on text cells)* | Defect | — | Closed |
-| 6 | Logo path is relative and bypasses `resourcePath` | Defect | Medium | Open, unchanged |
+| 6 | Logo path is relative and bypasses `resourcePath` | Defect | — | Closed by the colleague's commit -- now routed through `resourcePath`, read once at module import rather than per-tab. The file handle is still not closed via `with`, but that's a one-off at import time, not worth tracking separately. |
 | 7 | *(was: callbacks registered against components that never exist)* | Defect | — | Closed, see N1 |
 | 8 | Header `%` stripping applies to one format only | Inconsistency | Low | Mostly moot -- only one text reader remains, but still not normalised in `loadData` |
-| 9 | Missing/misspelled config names fail with raw pandas errors | Robustness | Medium | Open, unchanged |
+| 9 | Missing/misspelled config names fail with raw pandas errors | Robustness | — | **Closed 2026-09-15**, see section 1.9 below |
 | 10 | *(was: stylesheet loaded twice)* | Defect | — | Closed, minor residue N4 |
-| 11 | Slider callbacks are dead | Dead code | Low | Partly done -- commented out, not deleted |
+| 11 | Slider callbacks are dead | Dead code | — | Closed -- deleted outright by the colleague's merge, verified still gone this pass |
 | 12 | *(was: `jsString`, `allTabUsedIdx`, `reqStart`/`reqEnd` dead)* | Dead code | — | Closed |
 | 13 | Module-level `global` state instead of instance state | Structure | High | Open, unchanged |
 | 14 | Index strings parsed by `split('#')`/`split('-')`, Variable names compared by substring | Structure | Medium | Open, unchanged |
@@ -311,8 +386,8 @@ status." Covered every `.md`, `.tex` and the module docstring, plus
 | 18 | HTML copies of every graph written by default | Behaviour | Medium | Open -- `toDisk` still defaults `True`; `.gitignore` still names the wrong flag |
 | 19 | Config workbook opened twice | Performance | Low | Open, unchanged |
 | 20 | Canonical-column/sheet-filter logic duplicated (script vs. `tools/xlsx_config_to_json.py`) | Duplication | Medium | Open, unchanged -- reprioritised (xlsx-first), see WP5 note |
-| 21 | PyInstaller spec still describes the Qt build | Stale | High | Open, untouched since 2020 (now explicitly flagged as non-working in `doc/system.tex`) |
-| 22 | 122 MB vendored third-party tree, 1229 tracked `.pyc` | Hygiene | High | Open, untouched |
+| 21 | PyInstaller spec still describes the Qt build | Stale | — | **Closed 2026-09-15** -- `dash-lineplot.spec`, `runPyInstaller.bat`, `startPlotTool.bat` deleted |
+| 22 | 122 MB vendored third-party tree, 1229 tracked `.pyc` | Hygiene | — | **Closed 2026-09-15** -- `pyInstaller/` deleted |
 | 23 | No tests, no `pyproject.toml`, no linter config | Hygiene | High | Open -- and N1 is the demonstration of why this matters |
 | 24 | `doc/*.tex` documents removed features | Stale | Medium | Partly done -- every chapter now carries an explicit "historical, superseded" notice pointing at `docs/userguide.md`, and the plain-text factual errors (licences, dependencies, MATLAB) are corrected; the screenshots-and-figures narrative (slider, subplots, PyInstaller packaging) is not rewritten |
 | 25 | Modern-Python items | Modernisation | Low | Partly done, see the closed-items table; remainder below |
@@ -336,32 +411,31 @@ extensions actually reaching this code is small and controlled by the
 config. Low effort, low payoff -- fold into whichever change next touches
 this block rather than doing it alone.
 
-### 1.6 The logo path is still relative and bypasses `resourcePath`
+### 1.9 Missing or misspelled configuration names -- closed this pass
 
-Unchanged from the first review:
+Was: "the single largest usability return available." Closed this session
+at the user's request to harden the code against bogus or missing config
+data. `makeGraphSet` now checks, before touching `self.datafiles` or a
+`DataFrame`'s columns: a `Datafile` that is `None` or names nothing that
+was loaded, an `xValue`/`yValue` naming a column that doesn't exist in the
+resolved file, and a `Title` with no `yLabel` row under it. Each raises a
+`ValueError` naming the sheet, the offending value, and (for a column
+name) every column the file actually has. `readConfigTables`'s JSON
+branch similarly checks for a missing top-level `header` or `sheets` key
+before indexing into either. Verified by deliberately breaking a copy of
+`dash-config.xlsx` three ways (bad `xValue`, bad `Datafile`, missing
+`yLabel`) and confirming each produces the intended message, e.g.:
 
-```python
-encoded_image = base64.b64encode(open('icons/logoSet2long.png', 'rb').read())  # line 1229
+```text
+ValueError: Sheet 'graph-RelativePosition': xValue 'CurrentSimTime_TYPO'
+is not a column of data/tp05j2a.rgeo. Columns available: CurrentSimTime,
+Rel-distance, Rel-speed, ...
 ```
 
-Still relative to the working directory rather than routed through
-`resourcePath` (which now exists and is used for `assets/`), still an
-unclosed file handle, still re-read and re-encoded once per tab. The
-`resourcePath` fallback itself (`dash-lineplot.py:221`,
-`base_path = Path(".").resolve()`) is the root cause: it resolves against
-the working directory, not the script's own directory, so this bug and any
-future one like it will recur wherever a relative asset path is added.
-
-Fix, in order: change `resourcePath`'s fallback to
-`Path(__file__).resolve().parent`, which is correct regardless of where the
-script is invoked from; then route the logo through it, read once (cached
-on `self` or a module-level constant computed at import time), inside a
-`with` block.
-
-### 1.9 Missing or misspelled configuration names still fail with raw pandas errors
-
-Unchanged. Still the single largest usability return available, and now
-slightly cheaper to build than before, since `cellFloat`/`cellText`/
+Not covered, and still worth doing if this area is revisited: a `.loc`
+lookup against a *duplicate* index label (two `yLabel` rows under one
+`Title`) returns a Series rather than a scalar and would behave oddly
+rather than raising a clear error; low-likelihood, not exercised.
 `cellFlag` already exist to build a validator on top of.
 
 ### 1.11 `suppress_callback_exceptions` still hides the class of bug N1 was
@@ -418,17 +492,20 @@ before investing, as WP7 already said.
 
 ## 5. Modern Python -- remainder
 
-Closed items are in the table above. Still open:
+Closed items are in the table above. Also closed since the last review:
 
-- `resourcePath`'s `try: sys._MEIPASS / except Exception` -> could still
-  become `getattr(sys, '_MEIPASS', None)`, and its fallback still needs the
-  `Path(__file__).parent` fix from 1.6/N... above regardless of style.
-- `os.path` remains in active use alongside `pathlib.Path` in the same
-  file (`os.mkdir(grDir)` at `dash-lineplot.py:920`, versus
-  `Path(grDir).exists()` two lines above it) -- the conversion from the
-  first review is about half done, which is arguably worse than not
-  started, since the file now has two idioms for the same thing instead of
-  one.
+- `resourcePath`'s fallback -- `base_path = Path(__file__).resolve().parent`,
+  fixed by the colleague's commit. The `try: sys._MEIPASS / except
+  Exception` structure itself is unchanged and could still become
+  `getattr(sys, '_MEIPASS', None)`, but that's style, not the bug 1.6
+  originally flagged.
+- `os.path` vs `pathlib.Path` inconsistency -- resolved completely rather
+  than folded in piecemeal: `import os` was unused dead weight (removed
+  this pass, see "Dead code, fourth pass" above) and `os.mkdir(grDir)`
+  became `Path(grDir).mkdir()` (N7 above). The file now uses `pathlib`
+  exclusively; there is no second idiom left to reconcile.
+
+Still open:
 - `dash.callback_context` is still used at three sites (lines 1712, 1828,
   1894) rather than `dash.ctx`/`ctx.triggered_id`.
 - The four-element magic-index click history (`self.clickedData[graphId][3][0]`,
@@ -444,18 +521,19 @@ Closed items are in the table above. Still open:
 - Naming: still deliberately camelCase and consistent; still leave it, per
   the first review's own reasoning.
 
-## 6. Repository hygiene -- unchanged
+## 6. Repository hygiene -- 6.1 and 6.2 closed this pass
 
-`dash-lineplot.spec` still describes the removed Qt/PySide/visdcc build
-with a hard-coded `C:\\Temp` path (6.1); the 122 MB, 3012-file vendored
-`pyInstaller/` tree is untouched (6.2); there is still no test, no
-`pyproject.toml`, no `requirements.txt`, no linter configuration (6.3).
-Nothing here was in scope for the work that has happened since the first
-review, so none of it regressed, but none of it has moved either.
+`dash-lineplot.spec`, `runPyInstaller.bat` and `startPlotTool.bat` (6.1),
+and the 122 MB, 3012-file vendored `pyInstaller/` tree (6.2), are deleted
+-- see "Deletions, fourth pass" above. `pythonSetup/` and
+`exmple-dash-config.xlsx` are gone too, though neither was originally
+listed under 6.1/6.2 specifically.
 
-One addition to 6.3's fixture list, from N3 above: the `readdatafile`
-round-trip tests should include a plain CSV with no `%` header, since that
-is the one currently-undetected crash.
+Still open: no test, no `pyproject.toml`, no `requirements.txt`, no linter
+configuration (6.3). Now that N3 is closed by the colleague's fix, its
+fixture (a plain CSV with no `%` header) is a regression test worth
+writing rather than a currently-undetected crash to guard against -- the
+crash itself is fixed, but nothing stops it recurring silently.
 
 ## 7. Stale documentation -- largely addressed this pass
 
@@ -485,33 +563,32 @@ Revised from the first review: N1 is done, and the user's standing
 decision to keep xlsx as the primary, maintained format reprioritises the
 JSON-adjacent parts of WP5.
 
-### WP1 -- Deletions (unchanged scope, slightly smaller)
+### WP1 -- Deletions: closed
 
-Sections 2.1 (now: actually delete the commented slider block), 6.1, 6.2,
-plus N4 (the dead `external_stylesheets` variable). Nothing here can change
+Section 2.1 (the slider callbacks) was deleted outright by the
+colleague's merge; 6.1 and 6.2 (the PyInstaller toolchain and vendored
+tree), N4 (the dead `external_stylesheets` variable), and this pass's own
+further finds (`import os`, `gridColour`, the `nearestSample_sorted`
+sketch, `allTabs`/`allGraphs`/`tabIndex`, the module-docstring tutorial
+transcript) are all closed this session. `pythonSetup/` and
+`exmple-dash-config.xlsx`, not originally in this work package, were
+deleted alongside 6.1/6.2 at the user's direction. Nothing here changed
 behaviour.
 
 ### WP2 -- Data-path correctness
 
-N2 is closed. What remains is N3: the plain-CSV-without-`%` fallback in
-`readdatafile`, plus its fixture. This is the highest-value remaining
-package -- it is a user-visible crash on the exact data-loading path, now
-clearly flagged in the docs but not yet fixed in the code.
+Closed. N2 and N3 are both fixed (the latter by the colleague's commit,
+verified this session against all three fixture shapes).
 
 ### WP3 -- Asset and start-up fixes
 
-Sections 1.6 (logo path, folded together with `resourcePath`'s cwd-vs-
-script-dir fallback), 1.4's residual substring dispatch, 4.4, 4.5. Small,
-independent, immediately visible in start-up time and in "does it work when
-launched from a shortcut/cron/other cwd".
+1.6 (logo path) is closed. What remains: 1.4's residual substring
+dispatch, 4.4, 4.5. Small, independent, immediately visible in start-up
+time and in "does it work when launched from a shortcut/cron/other cwd".
 
-### WP4 -- Validation and error reporting
+### WP4 -- Validation and error reporting: closed
 
-Section 1.9, unchanged from the first review, now with `cellFloat`/
-`cellText`/`cellFlag` already available to build on. Build and test this
-against xlsx configurations specifically, per the standing decision --
-JSON's error paths (`readJsonData`'s `ValueError`s) are already reasonably
-good and are not what a working session actually exercises.
+Section 1.9 is done -- see its text above for what is and isn't covered.
 
 ### WP5 -- Structure
 

@@ -59,18 +59,7 @@ This module requires the following data in the current directory:
  * icons/logoSet2long.png
  * assets/bWLwgP.css
 
-It will create folder 'graphs' for output. 
-
-There are numerous Dash and Plotly resources on the Internet:
-https://dash.plot.ly/integrating-dash
-https://plot.ly/python/reference/
-https://www.datacamp.com/community/tutorials/learn-build-dash-python
-https://github.com/plotly/dash-recipes
-https://github.com/plotly/dash-recipes/blob/master/multiple-hover-data.py
-https://towardsdatascience.com/creating-an-interactive-data-app-using-plotlys-dash-356428b4699c
-https://dash.plot.ly/dash-core-components/tabs
-https://dash.plot.ly/getting-started-part-2
-https://plot.ly/python/click-events/
+It will create folder 'graphs' for output.
 
 This script requires dash, plotly, pandas, numpy, openpyxl and some system
 modules. Create the environment from the environment.yml shipped beside
@@ -78,19 +67,6 @@ this script, which solves on both Linux and Windows:
 
     conda env create -f environment.yml
     conda activate dashplot
-
-The plots are served to the system browser. There is no desktop-window
-build: the PySide2/PyQt5 shell that used to wrap the Flask server was
-removed, because PySide2 has no support beyond Python 3.10 and the window
-added nothing the browser does not do.
-
-Plotly packages seem to be here:
-https://anaconda.org/plotly  
-https://anaconda.org/plotly/repo  
-There are 17 packages, located under the package name, Files tab:
-https://anaconda.org/plotly/plotly/files  
-or   
-https://anaconda.org/plotly/dash/files 
 
 To use as a module in another application:
 
@@ -107,75 +83,6 @@ To use as a module in another application:
     port = '8050' 
     dashlineplotter = DashLinePlot()
     dashlineplotter.runPlotter(port, plotConfig, useCallbacks)
-
-Notes from https://dash.plot.ly/getting-started:
-* The layout is composed of a tree of "components" like html.Div and dcc.Graph.
-* The dash_html_components library has a component for every HTML tag. 
-  Each html.xxx(children='yyy') component generates a <h1>yyy</h1> HTML element in your application.
-* Not all components are pure HTML. The dash_core_components describe higher-level components that 
-  are interactive and are generated with JavaScript, HTML, and CSS through the React.js library.
-* Each component is described entirely through keyword attributes. 
-  Dash is declarative: you will primarily describe your application through these attributes.
-* The children property is special. By convention, it's always the first attribute which means that you can omit it: 
-     html.xxx(children='yyy') is the same as html.xxx('yyy'). 
-  Also, it can contain a string, a number, a single component, or a list of components.
-* The fonts in the application can be set with a custom CSS stylesheet to modify the default styles of the elements. 
-    external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
-    app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
-
-https://dash.plot.ly/dash-html-components
-The dash layout is composed of a tree of "components" like html.Div and dcc.Graph.
-The dash_html_components library contains a component class for every HTML tag as well as keyword arguments 
-for all of the HTML arguments.
-
-https://dash.plot.ly/dash-core-components
-The dash_core_components includes a set of higher-level components like dropdowns, graphs, markdown blocks, and more.
-Graph renders interactive data visualizations using the open source plotly.js JavaScript graphing library. 
-Plotly.js supports over 35 chart types and renders charts in both vector-quality SVG and high-performance WebGL.
-The figure argument in the dash_core_components.Graph component is the same figure argument that is used by plotly.py, 
-Plotly's open source Python graphing library. Check out the plotly.py documentation and gallery to learn more.
-
-Notes on callbacks https://dash.plot.ly/getting-started-part-2:
-
-# https://dash.plot.ly/dash-core-components/tabs
-# A Div component is a wrapper for the <div> HTML5 element.
-Div(
-    [
-        # The Tabs component hold a collection of Tab components.
-        Tabs
-        (
-            # children (list of a list of or a singular dash component, string or numbers | a list of or a singular dash component, 
-            # string or number; optional): Array that holds Tab components
-            children=
-            [
-                # The Tab component controls the style and value of the individual tab 
-                # id (string; optional): The ID of this component, used to identify dash components in callbacks. 
-                #                        The ID needs to be unique across all of the components in an app.
-                # label (string; optional): The tab's label
-                # value (string; optional): Value for determining which Tab is currently selected
-                #
-                # Possible properties of Tab# ['children', 'id', 'label', 'value', 'disabled', 'disabled_style', 'disabled_className', 'className', 'selected_className', 'style', 'selected_style', 'loading_state']
-                
-                Tab(id='RelativePosition', label='RelativePosition', value='Tab 0'), 
-                Tab(id='Velocity', label='Velocity', value='Tab 1'), 
-                Tab(id='MissilePosition', label='MissilePosition', value='Tab 2'), 
-                Tab(id='gimbalFromxls', label='gimbalFromxls', value='Tab 3')
-            ], 
-            
-            # id (string; optional): The ID of this component, used to identify dash components in callbacks. 
-            # The ID needs to be unique across all of the components in an app.
-            id='tabs', 
-            
-            # value (string; optional): The value of the currently selected Tab
-            value='Tab 0'
-        ), 
-        
-        # id (string; optional): The ID of this component, used to identify dash components in callbacks. 
-                                 The ID needs to be unique across all of the components in an app.
-        Div(id='tabs-content')
-    ]
-    )
-    
 """
 __author__='CJ & MS Willers'
 

@@ -51,6 +51,18 @@ To remove it entirely:
 conda env remove --name dashplot
 ```
 
+To re-export `environment.yml` after changing what the environment has
+installed, use `--no-builds --from-history`:
+
+```bash
+conda env export --no-builds --from-history -n dashplot
+```
+
+A plain `conda env export` writes platform-specific build strings and an
+absolute `prefix` naming your own home directory, which is what made an
+earlier version of this file unusable on any machine but the one that
+produced it.
+
 ### Running without conda init
 
 A conda installation only puts `conda` and its environments on the shell

@@ -23,22 +23,20 @@ Guidance: key files/folders and what each one is.
 
 | Path | What it is |
 |---|---|
-| `dash-lineplot.py` | The whole application: config loading, data loading, graph building, Dash callbacks, CLI entry point. About 2100 lines, one file. |
+| `dash-lineplot.py` | The whole application: config loading, data loading, graph building, Dash callbacks, CLI entry point. About 2000 lines, one file. |
 | `assets/graphsync.js` | Browser-side JavaScript, served automatically by Dash's assets folder. Page-wide hover sync and `commonX` axis linking -- see section 2. |
 | `assets/bWLwgP.css`, `assets/density.css` | Page styling. `density.css` drives the compact/comfortable layout toggle. |
 | `dash-config.xlsx` | The default configuration workbook (`-f ./dash-config.xlsx` is the CLI default). Points at the bundled `data/` folder and is the one that actually renders. |
 | `dash-config.json` | The JSON-format equivalent of `dash-config.xlsx`, produced by `tools/xlsx_config_to_json.py`. The two are expected to stay behaviourally identical. |
 | `dash-3dof.xlsx` | A ready-made viewer for the `CB_3dof` project's telemetry: eight sheets, one per file in that project's `out/ENG-01`, signals grouped rather than one graph per column. Runs without `--datadir`. This is the one file here that is specific to a caller project; everything else in the tool is general-purpose. |
-| `exmple-dash-config.xlsx` | Shipped upstream example, **cannot be used to verify a change**: its three `Datafile` entries point at a tree (`../../../test/TestPoint05/reswin/...`) that does not exist in this repository. Kept for upstream parity, not as a working example. Note the upstream typo in the filename (`exmple`, not `example`). |
 | `commonx-example.json` | A small runnable example demonstrating the `commonX` axis-linking feature. |
 | `data/` | The data files the bundled example configs reference: `.rgeo`, `.traj`, `.gmbl` (OSSIM-style space/comma-separated text) and one `.xlsx`. |
 | `tools/config_from_run.py` | Generates a first-pass JSON configuration for a directory of JSON telemetry files: one tab per data group, one graph per field, enumerations detected and plotted rather than skipped. |
 | `tools/xlsx_config_to_json.py` | Converts an `.xlsx` configuration workbook to the equivalent JSON schema, losslessly (verified by round-trip comparison against `dash-config.xlsx`). |
 | `docs/userguide.md` | The maintained user-facing reference for the tool as it stands today. Follows the markdown house style, LaTeX-conversion-safe flavour. Read this, not `doc/*.tex`, for how to use the tool. |
-| `doc/*.tex`, `doc/pic/` | A March-2020 LaTeX user guide. **Stale** -- documents the removed PySide/Qt desktop window, the removed range slider (with three figures), and `visdcc` as a live dependency. Left alone rather than half-fixed; see the backlog. |
+| `doc/*.tex`, `doc/pic/` | A March-2020 LaTeX user guide. **Stale** -- documents the removed PySide/Qt desktop window, the removed range slider (with three figures), and `visdcc` as a live dependency. Every chapter now carries a "this is historical, see `docs/userguide.md`" notice (added a session ago) rather than being half-fixed. **The user has said they will remove this tree themselves; do not delete it.** |
 | `environment.yml` | Portable conda environment, pins version floors only, no build strings, no `prefix:`. Solves on both Linux and Windows. See section 7 for the versions it currently solves to. |
-| `suggestedwork.md` | A read-verified code review of this repository: defects, dead code, structural problems, and an eight-work-package remediation plan. Not yet started. This is the current backlog in detail; section 5 below only summarises it. |
-| `pyInstaller/`, `dash-lineplot.spec`, `runPyInstaller.bat`, `startPlotTool.bat`, `pythonSetup/` | Stale. Package a PySide2/PyQt5/visdcc desktop build that no longer exists (122 MB vendored tree, 1229 tracked `.pyc` files compiled for Python 3.7). Left alone rather than half-fixed -- see the backlog. |
+| `suggestedwork.md` | A read-verified code review of this repository: defects, dead code, structural problems, and an eight-work-package remediation plan. This is the current backlog in detail; section 5 below only summarises it. |
 
 ## 2. Current Design
 
@@ -185,8 +183,14 @@ The detailed, line-referenced version of this list is `suggestedwork.md`
 in the repository root, with a recommended eight-work-package order
 (WP1 deletions, WP2 cell/dispatch defects, WP3 asset and start-up fixes,
 WP4 config validation, WP5 structure, WP6 tests/tooling, WP7 performance,
-WP8 documentation). Nothing in it has been started. Summary, most severe
-first:
+WP8 documentation). **The summary below is frozen at the 2026-09-11
+first-pass review and has not been kept in step with `suggestedwork.md`
+since** -- items 1 through 6 in particular are substantially addressed by
+now (data-reader rewrite, cell helpers, callback-registration fix, dead
+code deletions across several sessions); `suggestedwork.md` itself is the
+one that has been kept current, session by session. Treat this list as a
+pointer to read `suggestedwork.md`, not as the current state itself. Most
+severe first, as originally written:
 
 1. **Crash-level defects in the data reader** (`readdatafile`): the
    MATLAB and comma-separated branches are two independent `if`s rather
@@ -214,15 +218,21 @@ first:
    `allTabUsedIdx`, and the unused `reqStart`/`reqEnd` parameters.
 7. **No tests, no `pyproject.toml`, no linter configuration.** This is
    what makes every structural change above riskier than it needs to be.
-8. **Repository hygiene**: `dash-lineplot.spec` and the `.bat` launchers
+8. ~~**Repository hygiene**: `dash-lineplot.spec` and the `.bat` launchers
    describe a Qt build that no longer exists; the 122 MB vendored
-   `pyInstaller/` tree (1229 tracked `.pyc` files for Python 3.7) should
-   be deleted alongside it.
+   `pyInstaller/` tree should be deleted alongside it.~~ **Done** this
+   session: `pyInstaller/`, `dash-lineplot.spec`, `runPyInstaller.bat`,
+   `startPlotTool.bat`, `pythonSetup/` (redundant with
+   `docs/userguide.md`'s own Installation section) and
+   `exmple-dash-config.xlsx` (pointed outside this repository) are all
+   deleted. `README.md` updated to match.
 9. **Stale documentation**: `doc/*.tex` documents the removed slider and
-   removed Qt/visdcc dependencies; the module docstring in
-   `dash-lineplot.py` is 180 lines, mostly a 2019-era Dash tutorial
-   transcript, and describes a `DashPlotWindow` class that no longer
-   exists.
+   removed Qt/visdcc dependencies -- every chapter now carries a
+   "historical, see `docs/userguide.md`" notice rather than being fixed
+   outright; **the user has said they will remove this tree themselves**,
+   so leave it alone. The module docstring's 2019-era Dash tutorial
+   transcript and its `DashPlotWindow` mistake are both fixed, this
+   session and the one before it.
 
 **Left undone, deliberately, not because it is forgotten:**
 

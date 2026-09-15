@@ -29,9 +29,8 @@ To move an existing Excel config to the text format:
 python tools/xlsx_config_to_json.py dash-config.xlsx
 ```
 
-`exmple-dash-config.xlsx` references a test tree that is not part of this
-repository, so it cannot be run as shipped. `dash-config.xlsx` and its
-converted `dash-config.json` both work against the bundled `data/` folder.
+`dash-config.xlsx` and its converted `dash-config.json` both work against
+the bundled `data/` folder.
 
 `commonx-example.json` demonstrates `commonX`, which ties every graph on a
 tab to one x scale. Its first tab is linked and its second holds the same
@@ -116,9 +115,10 @@ on Windows alike:
     conda env create -f environment.yml
     conda activate dashplot
 
-See [pythonSetup/condaEnvironmentSetup.md](pythonSetup/condaEnvironmentSetup.md)
-for updating, exporting and removing the environment, and for the packages
-that earlier versions installed and this one deliberately does not.
+See [docs/userguide.md](docs/userguide.md#installation) for updating,
+exporting and removing the environment, running without `conda init`, and
+the packages earlier versions installed that this one deliberately does
+not.
 
 The install notes that used to sit here described pinning Werkzeug 2.0.0
 against a Dash 1.x incompatibility, and installing `visdcc` from a bz2
