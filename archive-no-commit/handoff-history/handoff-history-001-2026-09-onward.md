@@ -294,3 +294,36 @@ not a migration of record -- see the note at the end of `handoff.md`
 section 8. Both new files are untracked in git as of this entry; whether
 and how to commit them is the user's call, consistent with
 `archive-no-commit/` being excluded from version control by convention.
+
+## Session, 2026-10-07 -- handoff brought in line with the merged state
+
+`feature/modernise-and-json` had been squash-merged into `master` as PRs
+#1 and #2 (`58e48e8`, `cd395b8`); `git diff master
+feature/modernise-and-json` is empty, so the two trees are identical. The
+user removed the untracked `data/ds010/` and `dlp.json` from the working
+tree, leaving it clean. At the user's direction, work now continues on
+`master`; the "never commit to `master`" constraint in `handoff.md`
+section 4 was replaced accordingly.
+
+`handoff.md` updated in place: status line, branch constraint, file
+inventory (added `dash-config-sim.xlsx` and `README.md`, completed the
+`data/` listing), and the conda note in section 7 (the `~/miniforge3`
+paths are the Ubuntu machine's; the Windows location is not recorded).
+
+## Session, 2026-10-07 -- second server no longer shares a port
+
+User started two servers on the same data in two command windows; both
+reported `127.0.0.1:8050` and the browser kept showing the first one's
+page. Cause: Werkzeug sets `SO_REUSEADDR`, which on Windows allows a
+second bind to a listening port. Added `freePort` (connect probe, up to
+100 consecutive ports) and call it from the CLI entry point before
+`runPlotter`; a moved port is announced and the printed URL uses it.
+Verified with two servers started on 8120: second reported "port 8120 is
+already in use, using port 8121 instead", and `netstat` showed separate
+PIDs on 8120 and 8121. `docs/userguide.md` `--port` row and `README.md`
+(quick start, plus a module-usage note that `runPlotter` does not probe
+and `freePort` can be passed in) updated.
+
+During the first test run the cleanup step also killed a pre-existing
+listener on 8050 (PID 52656) that this session had not started -- the
+user was told. Cleanup in later tests killed only the test ports.

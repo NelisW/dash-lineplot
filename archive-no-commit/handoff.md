@@ -1,11 +1,11 @@
 # dash-lineplot -- Task Handoff Document
 
-Status: 2026-09-15 -- browser-served Dash viewer, modernised off a 2022
+Status: 2026-10-07 -- browser-served Dash viewer, modernised off a 2022
 conda-and-Qt base. Reads CSV, XLSX and JSON data (including multi-rate
 JSON; Matlab support was removed, see `closed-history.md`), configured by
-an Excel workbook or an equivalent JSON file. Runs on
-`feature/modernise-and-json`, pushed to `origin`, not merged to `master`;
-that stays the user's decision.
+an Excel workbook or an equivalent JSON file. The modernisation work has
+been squash-merged to `master` (PRs #1 and #2); work now continues directly
+on `master`.
 
 History-file cadence: size threshold, 30 KB (matching the convention this
 work already used in the `systemCHandbook` handoff it was split out of).
@@ -28,10 +28,12 @@ Guidance: key files/folders and what each one is.
 | `assets/graphsync.js` | Browser-side JavaScript, served automatically by Dash's assets folder. Page-wide hover sync and `commonX` axis linking -- see section 2. |
 | `assets/bWLwgP.css`, `assets/density.css` | Page styling. `density.css` drives the compact/comfortable layout toggle. |
 | `dash-config.xlsx` | The default configuration workbook (`-f ./dash-config.xlsx` is the CLI default). Points at the bundled `data/` folder and is the one that actually renders. |
+| `dash-config-sim.xlsx` | A second example workbook (sheets `header`, `graph-xyPlot`, `graph-yzPlot`, `graph-MissilePosition`, `graph-Attitude`, `graph-image`, `documentation`). Plots the `data/sensor-tel-test*.txt` files, which exercise the `%` comment-header variants. |
+| `README.md` | Quick start: environment creation, CLI invocation, and generating a config with `tools/config_from_run.py`. |
 | `dash-config.json` | The JSON-format equivalent of `dash-config.xlsx`, produced by `tools/xlsx_config_to_json.py`. The two are expected to stay behaviourally identical. |
 | `dash-3dof.xlsx` | A ready-made viewer for the `CB_3dof` project's telemetry: eight sheets, one per file in that project's `out/ENG-01`, signals grouped rather than one graph per column. Runs without `--datadir`. This is the one file here that is specific to a caller project; everything else in the tool is general-purpose. |
 | `commonx-example.json` | A small runnable example demonstrating the `commonX` axis-linking feature. |
-| `data/` | The data files the bundled example configs reference: `.rgeo`, `.traj`, `.gmbl` (OSSIM-style space/comma-separated text) and one `.xlsx`. |
+| `data/` | The data files the bundled example configs reference: `.rgeo`, `.traj`, `.gmbl` (OSSIM-style space/comma-separated text), one `.xlsx`, `sensor-tel-test1..3.txt`, and `example-multirate.json`. Only these are tracked; do not leave ad-hoc run data here. |
 | `tools/config_from_run.py` | Generates a first-pass JSON configuration for a directory of JSON telemetry files: one tab per data group, one graph per field, enumerations detected and plotted rather than skipped. |
 | `tools/xlsx_config_to_json.py` | Converts an `.xlsx` configuration workbook to the equivalent JSON schema, losslessly (verified by round-trip comparison against `dash-config.xlsx`). |
 | `docs/userguide.md` | The maintained user-facing reference for the tool as it stands today. Follows the markdown house style, LaTeX-conversion-safe flavour. Read this, not `doc/*.tex`, for how to use the tool. |
@@ -137,6 +139,12 @@ not silently forgetting.
   `.iloc[0]`.
 - Dash 4.x removed `run_server` outright (not merely deprecated); the
   method is `run`.
+- On Windows, Werkzeug's `SO_REUSEADDR` lets a second server bind a port
+  already in use, and the browser keeps reaching the first one. The CLI
+  therefore calls `freePort`, which probes with a *connect* (a bind test
+  would pass) and moves up to the next port with no listener. Only the
+  CLI entry point does this; `runPlotter` called as a module still uses
+  the port it is given.
 - `pkill -f dash-lineplot.py` from a shell that is itself running the
   command matches its own process too.
 
@@ -165,17 +173,22 @@ why.
 - **`environment.yml` pins version floors, never build strings, never a
   `prefix:`.** The 2022 file this replaced was Windows-only for exactly
   those reasons.
-- **Never commit to `master`.** Work happens on a feature branch
-  (currently `feature/modernise-and-json`); merging is the user's
-  decision.
+- **Work happens on `master`** (user's decision, 2026-10-07). The earlier
+  "never commit to `master`" rule applied while
+  `feature/modernise-and-json` was unmerged; that branch is now
+  squash-merged and identical in content to `master`, and is no longer the
+  working branch.
 - **`archive-no-commit/` must always be committed, despite its name.** The
   `no-commit` in the folder name is required by the handoff-management
   skill's own naming convention -- it is not an instruction to exclude the
   folder from commits in this repository. This repository is deployed by
   cloning to several PCs, so `handoff.md`, `handoff-history/`, and
   `prompt.md` under this folder must travel with every clone like any other
-  tracked file. Stage and commit changes here exactly as any other change;
-  do not treat the directory name as a reason to leave it out. (A prior
+  tracked file. The user commits changes here exactly as any other change;
+  do not treat the directory name as a reason to leave it out.
+- **Claude never commits or pushes.** Leave all changes in the working
+  tree; the user does every commit themselves (user's instruction,
+  2026-10-07). (A prior
   session got this wrong and left `prompt.md` uncommitted -- see history.)
 - **`suggestedwork.md` stays forward-looking only.** When an item in it
   closes, move its full write-up to `archive-no-commit/closed-history.md`
@@ -253,11 +266,13 @@ something on the jump from the 2022 baseline (`run_server` removed,
 `Series[int]` positional fallback removed) and are worth not regressing
 past silently.
 
-conda itself lives at `~/miniforge3`, installed in batch mode (no
-`conda init`, no shell profile modified). Invoke by path
+On the Ubuntu machine, conda lives at `~/miniforge3`, installed in batch
+mode (no `conda init`, no shell profile modified). Invoke by path
 (`~/miniforge3/bin/conda`, `~/miniforge3/envs/dashplot/bin/python`) if not
 activated. Self-contained and removable with `rm -rf ~/miniforge3` if it
-is ever no longer wanted.
+is ever no longer wanted. The repository is also worked on from Windows;
+the conda location there is not recorded here -- check with
+`conda env list` rather than assuming the Linux paths.
 
 **Configuration schema** (see `readConfigTables` in `dash-lineplot.py`,
 and `tools/xlsx_config_to_json.py` for the converter): a `header`

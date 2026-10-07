@@ -8,9 +8,12 @@ conda activate dashplot
 python dash-lineplot.py --configfile dash-config.xlsx
 ```
 
-Then open `http://127.0.0.1:8050/`. The page is served to the system
-browser; there is no desktop-window build. The options are `--configfile`,
-`--port` and `--datadir`.
+Then open the address the script prints, by default
+`http://127.0.0.1:8050/`. The page is served to the system browser; there
+is no desktop-window build. The options are `--configfile`, `--port` and
+`--datadir`. If a server is already running on the requested port, the
+next free port is used instead and the script says so, so each running
+server has its own address.
 
 To plot a directory of JSON telemetry without writing a config by hand,
 generate one and point the server at the same directory:
@@ -140,6 +143,10 @@ To use as a module in another application:
         port = '8050' 
         dashlineplotter = DashLinePlot()
         dashlineplotter.runPlotter(port, plotConfig, useCallbacks)
+
+   `runPlotter` uses the port it is given, even if another server is
+   already listening there. To get the command line's behaviour, pass
+   `freePort(8050)` (from the same module) as the port instead.
 
 Notes from https://dash.plot.ly/getting-started:
 

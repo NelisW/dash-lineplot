@@ -68,6 +68,7 @@ __author__='CJ & MS Willers'
 
 import sys
 import json
+import socket
 
 import threading
 import pandas as pd
@@ -555,6 +556,31 @@ def readPageTitle(configfile):
     if 'Pagetitle' in dfHeader.index:
         return str(dfHeader.loc['Pagetitle', 'Value'])
     return default
+
+################################################################
+def freePort(port, tries=100):
+    """
+    Return the first port, from port upward, on which no server is listening.
+
+    A bind test is not enough: the Flask/Werkzeug server sets SO_REUSEADDR,
+    and on Windows that lets a second process bind a port already in use,
+    so two servers share one port and the browser keeps reaching the first.
+    Probing with a connect finds a port that is genuinely in use.
+
+    Args:
+        | port (int): first port to try.
+        | tries (int): number of consecutive ports to try.
+
+    Returns:
+        | port (int): a port with no listening server.
+
+    """
+    for candidate in range(port, port + tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.5)
+            if sock.connect_ex(('127.0.0.1', candidate)) != 0:
+                return candidate
+    raise RuntimeError(f'no free port in {port}..{port + tries - 1}')
 
 ################################################################
 class DashLinePlot:
@@ -2001,10 +2027,16 @@ if __name__ == "__main__":
 
     pagetitle = readPageTitle(args.configfile)
 
+    # never share a port with a server that is already running: the browser
+    # would silently keep showing the older server's page
+    port = freePort(args.port)
+    if port != args.port:
+        print(f'\nport {args.port} is already in use, using port {port} instead')
+
     # always use callbacks: required for the slider, click data and the
     # rectangle tool to work
     dashlineplotter = DashLinePlot()
-    serving = dashlineplotter.runPlotter(args.port, args.configfile, cback=True,
+    serving = dashlineplotter.runPlotter(port, args.configfile, cback=True,
                                          datadir=args.datadir, pagetitle=pagetitle)
 
     # loadData returns False when a data file named in the config is missing,
@@ -2016,7 +2048,7 @@ if __name__ == "__main__":
 
     # runDash runs in a daemon thread, so the main thread has to stay alive
     # for the server to keep serving.
-    print(f'\nserving on http://127.0.0.1:{args.port}/   (Ctrl+C to stop)\n')
+    print(f'\nserving on http://127.0.0.1:{port}/   (Ctrl+C to stop)\n')
     try:
         threading.Event().wait()
     except KeyboardInterrupt:

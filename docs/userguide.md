@@ -115,14 +115,15 @@ python dash-lineplot.py --configfile dash-config.xlsx
 ```
 
 Then open the address the script prints, by default
-`http://127.0.0.1:8050/`, in a browser. Stop the server with Ctrl+C.
+`http://127.0.0.1:8050/`, in a browser. When several servers run at
+once, each gets its own port, so always use the printed address. Stop the server with Ctrl+C.
 
 The command line takes three options:
 
 | Option | Meaning |
 |---|---|
 | `-f`, `--configfile` | Configuration file, `.xlsx` or `.json`. Defaults to `./dash-config.xlsx`. |
-| `-p`, `--port` | Port for the local Flask server. Defaults to 8050. |
+| `-p`, `--port` | Port for the local Flask server. Defaults to 8050. If a server is already listening on that port, the next free port is used instead and the script says so. |
 | `-d`, `--datadir` | Directory against which relative data file names in the configuration are resolved. Optional. |
 
 Working in a terminal is recommended rather than launching the script by
