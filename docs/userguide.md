@@ -123,7 +123,7 @@ The command line takes three options:
 | Option | Meaning |
 |---|---|
 | `-f`, `--configfile` | Configuration file, `.xlsx` or `.json`. Defaults to `./dash-config.xlsx`. |
-| `-p`, `--port` | Port for the local Flask server. Defaults to 8050. If a server is already listening on that port, the next free port is used instead and the script says so. |
+| `-p`, `--port` | Port for the local Flask server. Defaults to 8050. If that port is not free (another server is using it, or the operating system has reserved it), the ports above it are checked one by one until a free one is found, and the script says which port it used. |
 | `-d`, `--datadir` | Directory against which relative data file names in the configuration are resolved. Optional. |
 
 Working in a terminal is recommended rather than launching the script by

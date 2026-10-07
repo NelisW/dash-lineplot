@@ -558,29 +558,41 @@ def readPageTitle(configfile):
     return default
 
 ################################################################
-def freePort(port, tries=100):
+def freePort(port):
     """
-    Return the first port, from port upward, on which no server is listening.
+    Return the first port, from port upward, that is verified to be free.
 
-    A bind test is not enough: the Flask/Werkzeug server sets SO_REUSEADDR,
-    and on Windows that lets a second process bind a port already in use,
-    so two servers share one port and the browser keeps reaching the first.
-    Probing with a connect finds a port that is genuinely in use.
+    Each candidate must pass two tests, and the search continues upward
+    until one does. First, the port must be bindable for exclusive use,
+    which rejects a port that is in use, bound but not listening, or
+    reserved by the operating system. Exclusive matters: the Flask/Werkzeug
+    server sets SO_REUSEADDR, and on Windows that lets a second process
+    bind a port already in use, so two servers would share one port.
+    Second, nothing may answer a connect. This runs only on a port that
+    passed the bind test, because on Windows a refused loopback connect
+    takes the full timeout.
 
     Args:
         | port (int): first port to try.
-        | tries (int): number of consecutive ports to try.
 
     Returns:
-        | port (int): a port with no listening server.
+        | port (int): a port that is free.
 
     """
-    for candidate in range(port, port + tries):
+    for candidate in range(port, 65536):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            try:
+                sock.bind(('127.0.0.1', candidate))
+            except OSError:
+                continue
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.settimeout(0.5)
-            if sock.connect_ex(('127.0.0.1', candidate)) != 0:
-                return candidate
-    raise RuntimeError(f'no free port in {port}..{port + tries - 1}')
+            if sock.connect_ex(('127.0.0.1', candidate)) == 0:
+                continue
+        return candidate
+    raise RuntimeError(f'no free port from {port} upward')
 
 ################################################################
 class DashLinePlot:
@@ -2031,7 +2043,7 @@ if __name__ == "__main__":
     # would silently keep showing the older server's page
     port = freePort(args.port)
     if port != args.port:
-        print(f'\nport {args.port} is already in use, using port {port} instead')
+        print(f'\nport {args.port} is not free, using port {port} instead')
 
     # always use callbacks: required for the slider, click data and the
     # rectangle tool to work

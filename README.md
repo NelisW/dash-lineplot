@@ -11,9 +11,10 @@ python dash-lineplot.py --configfile dash-config.xlsx
 Then open the address the script prints, by default
 `http://127.0.0.1:8050/`. The page is served to the system browser; there
 is no desktop-window build. The options are `--configfile`, `--port` and
-`--datadir`. If a server is already running on the requested port, the
-next free port is used instead and the script says so, so each running
-server has its own address.
+`--datadir`. If the requested port is not free (a server is already
+running on it, or the operating system has reserved it), the ports above
+it are checked one by one until a free one is found, and the script says
+which port it used. Each running server therefore has its own address.
 
 To plot a directory of JSON telemetry without writing a config by hand,
 generate one and point the server at the same directory:

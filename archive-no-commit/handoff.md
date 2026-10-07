@@ -37,6 +37,7 @@ Guidance: key files/folders and what each one is.
 | `tools/config_from_run.py` | Generates a first-pass JSON configuration for a directory of JSON telemetry files: one tab per data group, one graph per field, enumerations detected and plotted rather than skipped. |
 | `tools/xlsx_config_to_json.py` | Converts an `.xlsx` configuration workbook to the equivalent JSON schema, losslessly (verified by round-trip comparison against `dash-config.xlsx`). |
 | `docs/userguide.md` | The maintained user-facing reference for the tool as it stands today. Follows the markdown house style, LaTeX-conversion-safe flavour. Read this, not `doc/*.tex`, for how to use the tool. |
+| `docs/SDD.md` | Software design description: components, run-time sequence, config/data model, callbacks, browser sync, state, error handling, known design limitations, and a code map with line ranges (these drift; refresh them when the file changes shape). LaTeX-conversion-safe flavour, with Pandoc/Puppeteer front matter at the user's request. |
 | `doc/*.tex`, `doc/pic/` | A March-2020 LaTeX user guide. **Stale** -- documents the removed PySide/Qt desktop window, the removed range slider (with three figures), and `visdcc` as a live dependency. Every chapter now carries a "this is historical, see `docs/userguide.md`" notice (added a session ago) rather than being half-fixed. **The user has said they will remove this tree themselves; do not delete it.** |
 | `environment.yml` | Portable conda environment, pins version floors only, no build strings, no `prefix:`. Solves on both Linux and Windows. See section 7 for the versions it currently solves to. |
 | `suggestedwork.md` | The current, **forward-looking-only** backlog: open defects, structural and performance issues, hygiene, and an order of work. Closed items are not kept here -- see `closed-history.md` below. |
@@ -141,10 +142,15 @@ not silently forgetting.
   method is `run`.
 - On Windows, Werkzeug's `SO_REUSEADDR` lets a second server bind a port
   already in use, and the browser keeps reaching the first one. The CLI
-  therefore calls `freePort`, which probes with a *connect* (a bind test
-  would pass) and moves up to the next port with no listener. Only the
-  CLI entry point does this; `runPlotter` called as a module still uses
-  the port it is given.
+  therefore calls `freePort`, which walks upward from the requested port
+  (to 65535, no fixed try limit) and accepts a port only if an
+  *exclusive* bind succeeds (`SO_EXCLUSIVEADDRUSE` on Windows; a plain
+  bind would pass) and then nothing answers a connect. The bind runs
+  first because on Windows a refused loopback connect costs the full
+  0.5 s timeout, so checking connect first made skipping a reserved
+  range (`netsh interface ipv4 show excludedportrange protocol=tcp`)
+  take minutes. Only the CLI entry point does this; `runPlotter` called
+  as a module still uses the port it is given.
 - `pkill -f dash-lineplot.py` from a shell that is itself running the
   command matches its own process too.
 

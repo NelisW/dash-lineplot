@@ -327,3 +327,35 @@ and `freePort` can be passed in) updated.
 During the first test run the cleanup step also killed a pre-existing
 listener on 8050 (PID 52656) that this session had not started -- the
 user was told. Cleanup in later tests killed only the test ports.
+
+## Session, 2026-10-07 -- free-port search hardened
+
+User asked that the port search not assume the next port is available
+but keep iterating until a verified free port is found. The first
+`freePort` stopped after 100 ports and accepted any port that refused a
+connect, which would also accept a port that is bound but not listening,
+or reserved by Windows, and the server would then fail to bind. Now it
+iterates to 65535 and requires an exclusive bind to succeed and then no
+answer to a connect. An intermediate version that probed connect first
+took minutes inside a reserved range (each refused loopback connect on
+Windows costs the 0.5 s timeout), so the bind test now runs first.
+Verified: listening x2 plus bound-not-listening at 8130..8132 -> 8133;
+start inside reserved 57769..58168 -> 58169; reserved 5357 -> 5358; each
+about 0.5 s. Three real servers started on 8120 came up on 8120, 8121 and
+8122 as separate PIDs. Startup message now reads "port N is not free".
+
+## Session, 2026-10-07 -- software design description
+
+Wrote `docs/SDD.md` from a full read of `dash-lineplot.py`,
+`assets/graphsync.js`, `assets/density.css` and both tools. User chose
+LaTeX-conversion-safe flavour and asked for the Pandoc/Puppeteer front
+matter as well (the house rule says that flavour normally carries none;
+the user's choice was followed). ASCII and CR check: 0 and 0.
+
+While writing it, one inconsistency surfaced and is recorded in the SDD's
+known limitations as a TODO: `makeGraphSet` treats a sheet with *no*
+`ToDisk` row as export-on, while a blank `ToDisk` cell means export-off.
+
+Also brought `docs/userguide.md` (`--port` row) and `README.md` in line
+with the hardened port search: "not free" now covers reserved ports and
+ports that are taken but not serving, not only a running server.
