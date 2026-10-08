@@ -7,13 +7,10 @@ names, and serves them as a set of tabbed pages through a local Flask
 server. The user has full control over which graph sets are rendered on
 which page.
 
-This is the first revision of this guide, covering installation,
-configuration, data formats and use of the browser display. It will be
-extended as the tool develops. The older guide in `doc/`, built from LaTeX
-sources and dated March 2020, describes the utility as it was when it ran
-inside a Qt desktop window; where the two disagree, this document is
-current. The section on features not currently available records what was
-lost in between.
+This guide covers installation, running the utility, the data formats it
+reads, the configuration that drives it, and the browser display,
+including hardcopy output. How the tool is built is described in
+`docs/SDD.md`.
 
 ## Installation
 
@@ -59,9 +56,8 @@ conda env export --no-builds --from-history -n dashplot
 ```
 
 A plain `conda env export` writes platform-specific build strings and an
-absolute `prefix` naming your own home directory, which is what made an
-earlier version of this file unusable on any machine but the one that
-produced it.
+absolute `prefix` naming your own home directory, which would make the
+file unusable on any machine but the one that produced it.
 
 ### Running without conda init
 
@@ -148,7 +144,7 @@ The script expects two folders beside it, both part of the repository:
 
 | Folder | Contents |
 |---|---|
-| `assets/` | The cascading style sheet that formats the page. Dash is unstyled by default. |
+| `assets/` | The style sheets that format the page, and its scripts: `graphsync.js` (linked hover and x ranges) and `hardcopy.js` (Ctrl+Alt+H). Dash serves everything in this folder automatically. |
 | `icons/` | Images used on the page. |
 
 A `graphs/` folder is created by the script whenever it builds a page,
@@ -158,6 +154,10 @@ Those files can be opened directly in a browser, with full Plotly
 functionality and without a running server, and are regenerated on every
 run. The folder is build output and is not tracked in version control.
 
+Hardcopy pages (see Hardcopy below) are written into the directory the
+script is started from, not into `graphs/`, unless another folder is
+chosen.
+
 ## Input data file formats
 
 A single configuration may draw on several data files of different types.
@@ -165,25 +165,16 @@ The type is chosen from the file extension.
 
 | Extension | Format |
 |---|---|
-| `.csv` and most others | See the note below: currently requires a `%`-prefixed header line. |
 | `.xlsx` | First sheet only, column names in the top row. |
 | `.json` | A record array, or an object of named groups. See below. |
+| anything else, such as `.csv` or `.txt` | Text with comma, tab or space separated columns. |
 
-Matlab (`.mat`) files are no longer supported; the reader that loaded
-`DATA`/`NAM`/`TIME` from a Matlab file was removed, along with the `scipy`
-dependency it needed. See "Features not currently available" below.
-
-**Known limitation, not the intended design:** the `.csv`/generic reader
-currently requires the file to carry at least one comment line starting
-with `%` (a leftover of the removed Matlab reader's header convention,
-optionally with a space before the first column name, as in `%time` or
-`% time`), whose text supplies the column headers, followed by the data
-rows. A plain CSV with an ordinary column-name header row and no `%` line
-at all will raise `AttributeError` rather than being read. This is tracked
-as an open defect in `suggestedwork.md` (finding N3); it is not a
-documented feature and should not be relied on. Every data file shipped
-with this repository happens to carry a `%` header, which is why the defect
-has not surfaced here.
+In a text file the column names come from the first line. Alternatively
+the file may start with comment lines beginning with `%`; the first of
+them then supplies the column names (`%time` and `% time` both work) and
+the rest are skipped. Any other format is not supported: a file whose
+extension is neither `.xlsx` nor `.json` is read as delimited text, and
+fails if it is not, a Matlab `.mat` file for example.
 
 The result is one table per file, or per group within a file, and the
 configuration refers to columns of that table by name.
@@ -226,9 +217,8 @@ groups, each group holding its own record array with its own time column:
 
 Which of the two shapes a file uses is declared by its own structure, not
 guessed from the contents: a top-level list is one record array, a
-top-level object is a set of named groups. Nothing else changes. Existing
-single-rate files continue to mean what they have always meant, and rates
-are never inferred from timestamps.
+top-level object is a set of named groups. Rates are never inferred from
+timestamps.
 
 A group is selected by appending a `#` fragment to the `Datafile` value:
 
@@ -240,7 +230,7 @@ Naming a group that does not exist, or omitting the fragment for a file
 that has groups, is reported with the list of groups the file does contain.
 
 Data recorded at different rates in **separate** files needs no fragment.
-One file is one table, as before.
+One file is one table.
 
 ### Enumerations
 
@@ -302,13 +292,13 @@ words.
 The shipped `dash-config.xlsx` and `dash-config.json` are the same
 configuration in both formats, kept in step by the converter, and both work
 against the bundled `data/` folder. The workbook's `documentation` sheet
-lists every variable and its default beside the settings themselves. Its
-`gimbalFromxls` tab has `commonX` set, so it also serves as a working
-example of two linked graphs.
+lists the variables and their defaults beside the settings themselves. Its
+`gimbal` and `gimbalFromxls` tabs have `commonX` set, so they also serve as
+working examples of linked graphs.
 
-Note that `Include` is `False` on several tabs of the shipped
-configuration, so they do not appear in the browser until it is set to
-`True`. A setting on an excluded tab has no effect on the page.
+`Include` is `False` on the shipped configuration's `MissilePosition` tab,
+so that tab does not appear in the browser until it is set to `True`. A
+setting on an excluded tab has no effect on the page.
 
 ### Structure
 
@@ -361,7 +351,7 @@ four and the graph set entries are required; the rest take defaults.
 | `Height` | Height of each graph in the browser, in pixels. A graph of 200 or less is drawn without the column of boxes beside it. |
 | `Datafile` | Path to the data file for this tab. The keyword `master` selects the file named on the header sheet. |
 | `xLabel` | Label for the x axis. |
-| `xValue` | Name of the data column supplying x values. |
+| `xValue` | Name of the data column supplying x values. A `yValue` row may name its own in an `xValue` column; see Several data sources on one graph. |
 | `Title` | Title of one graph. Starts a new graph set. |
 | `yLabel` | Label for the y axis of the current graph. |
 | `yValue` | Name of a data column supplying y values. Repeat it for more lines on the same graph. |
@@ -371,6 +361,7 @@ four and the graph set entries are required; the rest take defaults.
 | `ToDisk` | `True` or `False`. Whether to write a standalone HTML copy into `graphs/`. Defaults to `False`. |
 | `commonX` | `True` or `False`. Tie every graph on this tab to one x scale. Defaults to `False`. |
 | `HardcopyGraphsPerPage` | A positive whole number: the number of equal-height graphs on each hardcopy page of this tab. When absent, each graph keeps its own height. See Hardcopy below. |
+| `LegendTransparency`, `LegendOrientation`, `LegendX`, `LegendY` | Override the header's legend settings. Before the sheet's first `Title` a row sets the whole tab; after a graph's `Title` (before the next) it sets that graph only. See Legend below. |
 
 Any number of graphs may appear on one tab. A `Title` entry opens a new
 graph, and the `yLabel` and `yValue` entries that follow it belong to that
@@ -381,9 +372,12 @@ graph until the next `Title`.
 | Variable | Meaning |
 |---|---|
 | `Pagetitle` | Browser tab title. |
-| `PageTop`, `PageBottom` | Markdown rendered at the top and bottom of every page. |
+| `PageTop`, `PageBottom` | Markdown rendered at the top and bottom of every page. `PageBottom` is prefixed with the date of the run; left blank, it shows the date alone. |
 | `Datafile` | Master data file. A graph sheet selects it with the keyword `master`. |
 | `Density` | `compact` or `comfortable`. Defaults to `compact`. |
+| `LegendTransparency` | A number from 0 to 1: how see-through the legend's white background is, 0 solid white, 1 fully see-through so the plot shows behind the legend. Defaults to 0.4. See Legend below. |
+| `LegendOrientation` | `v` (a column, the default) or `h` (a row). See Legend below. |
+| `LegendX`, `LegendY` | Numbers from 0 to 1: the legend's position inside the plot, 0 left/bottom, 1 right/top. Default 1 and 1, the top-right corner. See Legend below. |
 
 `Density` controls how tightly the page is packed.
 
@@ -392,12 +386,56 @@ graph row and the next entirely, and tightens the margins Plotly reserves
 around each plot so that the data area fills roughly 70 percent of the
 graph rather than 40. The graph title is drawn inside the plotting area,
 against its top left corner, rather than in a band of page above the graph,
-so a title costs no page height at all. `comfortable` restores the roomier
-original spacing, leaves Plotly's default margins alone, and puts the title
-back above the plot.
+so a title costs no page height at all. `comfortable` uses roomier
+spacing, Plotly's default margins, and the title above the plot.
 
 Measured on a seven-graph page with `Height` set to 240: 1940 px compact
 against 4286 px comfortable.
+
+### Legend
+
+Each graph's legend sits inside its plot, by default in the top-right
+corner, listed in a column, on a white background drawn partly
+see-through so the lines behind it still show. Four settings change
+that:
+
+| Variable | Values | Default | Effect |
+|---|---|---|---|
+| `LegendTransparency` | 0 to 1 | 0.4 | How see-through the background is: 0 solid white, 1 fully see-through, so the plot shows behind the legend. |
+| `LegendOrientation` | `v` or `h` | `v` | Entries in a column (`v`) or a row (`h`). |
+| `LegendX` | 0 to 1 | 1 | Position across the plot: 0 left edge, 1 right edge. |
+| `LegendY` | 0 to 1 | 1 | Position up the plot: 0 bottom edge, 1 top edge. |
+
+The legend anchors on the side nearest its position: at `LegendX` 1 and
+`LegendY` 1 its top-right corner sits in the plot's top-right corner, at
+0 and 0 its bottom-left corner in the bottom-left, and at 0.5 it is
+centred. Positions are limited to 0 to 1, inside the plot, because a
+legend outside it makes that graph's plot narrower than its neighbours',
+and stacked graphs would no longer line up in x.
+
+Each setting can be given at three levels, each overriding the one
+before, and each is resolved on its own, so a tab can, say, move the
+legend down without changing its orientation:
+
+| Where | Applies to |
+|---|---|
+| Header | The whole page. |
+| Graph sheet, before its first `Title` | That tab. |
+| Graph sheet, after a graph's `Title` and before the next | That graph only. |
+
+On a graph sheet the row's position is what decides: a legend row placed
+at the end of a sheet, where `Include` and `ToDisk` often go, belongs to
+the last graph, not the tab. A value outside the ones listed above is
+reported when the page is built and ignored.
+
+The shipped examples set `LegendTransparency` 0.7 in the header, mostly
+see-through. The `independent` tab of `commonx-example.json` shows its
+other two levels: a tab value of 0.4 before its first graph, and 0 (solid
+white) on its second graph alone. `multisource-example.json` shows the layout settings: the
+header puts a horizontal legend (`h`) at 0, 0; the `summary` tab moves it
+to the bottom centre (`LegendX` 0.5); and its second graph switches back
+to a vertical legend at the bottom right (`LegendOrientation` `v`,
+`LegendX` 1).
 
 ### Tying the graphs of a tab to one x scale
 
@@ -408,6 +446,13 @@ one x range. Two things follow.
 any graph applies the same x range to every other graph on the tab, so the
 whole tab always shows the same interval. If the x axis is time, the graphs
 stay aligned in time whatever the reader does to one of them.
+
+The graphs start on the tab's exact data extent, the smallest to the
+largest x of every line on the tab, and Reset, Plotly's Autoscale and
+Reset axes all return them there. Plotly's own autorange would not do: it
+adds a margin either side of any line drawn with markers, even invisible
+ones (`MarkerOpacity` 0), but not of a line drawn without, so graphs of
+the two kinds would start on slightly different x ranges.
 
 **A click reads the whole tab.** Clicking any graph fills the Click Data
 box of every graph on the tab at that same x, so one click reads all of
@@ -459,10 +504,10 @@ boxes report only what happened on that graph, in the forms described under
 measurements below.
 
 `commonX` links the graphs of one tab. Graphs on different tabs are never
-linked, since only one tab is on screen at a time. Two worked examples
-ship with the tool: the `gimbalFromxls` tab of `dash-config.xlsx`, and
-`commonx-example.json`, which puts the same three graphs on a linked tab
-and an unlinked tab for comparison.
+linked, since only one tab is on screen at a time. Worked examples ship
+with the tool: the `gimbal` and `gimbalFromxls` tabs of `dash-config.xlsx`
+(and its JSON twin), and `commonx-example.json`, which puts the same three
+graphs on a linked tab and an unlinked tab for comparison.
 
 ### Blocks: several data files on one tab
 
@@ -472,36 +517,36 @@ every graph below it until another row of the same kind replaces it. Each
 `Title` starts a graph, which takes whatever settings are in force at that
 point.
 
-A sheet with one `Height` at the top therefore behaves exactly as it always
-did: its single `Datafile` and `xValue` apply to every graph on the tab.
+A sheet with one `Height` at the top is therefore a single block: its
+`Datafile` and `xValue` apply to every graph on the tab.
 Adding a second `Height` starts a second block, which is how one tab carries
 several data files:
 
 | Variable | Value | Effect |
 |---|---|---|
 | `Height` | 260 | opens the first block |
-| `Datafile` | `out/ENG-01/gimbal.json` | applies from here down |
+| `Datafile` | `run/actuator.json` | applies from here down |
 | `xLabel` | `Time [s]` | applies from here down |
 | `xValue` | `t` | applies from here down |
-| `Title` | Gimbal angles | first graph, drawn from `gimbal.json` |
-| `yLabel` | Angle [rad] | |
-| `yValue` | `theta_g` | |
+| `Title` | Actuator position | first graph, drawn from `actuator.json` |
+| `yLabel` | Position [m] | |
+| `yValue` | `position` | |
 | `Height` | 260 | opens the second block |
-| `Datafile` | `out/ENG-01/camera.json` | replaces the first file from here down |
-| `Title` | Tracking error | second graph, drawn from `camera.json` |
-| `yLabel` | Error [rad] | |
-| `yValue` | `eps_y` | |
+| `Datafile` | `run/sensor.json` | replaces the first file from here down |
+| `Title` | Sensor error | second graph, drawn from `sensor.json` |
+| `yLabel` | Error [m] | |
+| `yValue` | `error` | |
 
 The second block inherits `xValue` and `xLabel` from the first because it
 does not set them. It may set either, which matters when two files name
-their time column differently: the 3dof telemetry uses `t` while the older
-`.rgeo` data uses `CurrentSimTime`.
+their time column differently: one file might call it `t`, while the
+bundled `.rgeo` files call it `CurrentSimTime`.
 
 Nothing is aligned or resampled between blocks. Each graph is drawn from its
 own file at the rate that file was recorded, and `commonX` ties their x axes
 together if you want them read as one.
 
-A single `yValue` row may still name its own `Datafile` in the `Datafile`
+A single `yValue` row may also name its own `Datafile` in the `Datafile`
 **column**, which overrides its block for that one line. Use a block when a
 whole graph comes from another file, and the column when one line does.
 
@@ -530,6 +575,43 @@ column named by the sheet's `xValue`. The tables are not aligned, padded or
 resampled against one another; each line is simply drawn at the rate it was
 recorded.
 
+### Several data sources on one graph
+
+The same per-row override gives one graph a line from each of several
+files, for example the same quantity from several runs or instruments.
+When the files name their time column differently, a `yValue` row may
+also name its own x column, in the `xValue` **column**, beside its
+`Datafile` cell:
+
+| Variable | Value | Datafile | xValue | LineLabel |
+|---|---|---|---|---|
+| `xValue` | `t` | | | |
+| `xLabel` | `Time [s]` | | | |
+| `Title` | value1 from three sources | | | |
+| `yLabel` | `value1 [-]` | | | |
+| `yValue` | `value1` | `data/multisource-a.json` | | A |
+| `yValue` | `value1` | `data/multisource-b.json` | `time` | B |
+| `yValue` | `value1` | `data/multisource-c.csv` | `CurrentSimTime` | C |
+
+A blank `xValue` cell keeps the block's `xValue` row, here `t`. Each line
+takes x and y from its own file and is drawn at that file's own samples;
+nothing is interpolated or resampled. The graph keeps one x axis: the x
+label, format, `Scale` and `Offset` are the block's, set on its `xLabel`
+and `xValue` rows, and apply to every line alike, so all the time
+columns should be in the same unit. Give each line a `LineLabel`, or the
+legend repeats the column name once per file. Hover and the click and
+selection readouts report each line's own recorded values.
+
+`multisource-example.json` demonstrates this on dummy data, three files
+with time columns `t`, `time` and `CurrentSimTime` on 0.1 s, 0.25 s and
+0.5 s grids:
+
+```bash
+python dash-lineplot.py --configfile multisource-example.json
+```
+
+`tools/make_multisource_demo_data.py` regenerates the data files.
+
 ### Line attributes
 
 These are set in additional columns on a `yValue` row, or on the `xLabel`
@@ -549,6 +631,7 @@ and `yLabel` rows in the case of `Format`.
 | `Format` | Number format for the hover text, such as `.4f`. Set on the `xLabel` and `yLabel` rows, and applies to the whole graph. |
 | `Categories` | Ordered state names for an enumeration column. A comma-separated list in a spreadsheet cell, a JSON list in a JSON config. Defaults to order of first appearance. |
 | `Datafile` | Data file for this line only, overriding the sheet's. This is how one tab carries several sample rates. |
+| `xValue` | x column for this line only, in its own data file, overriding the block's `xValue` row. For files that name their time column differently; the x scale and offset stay the block's. |
 
 `Scale` and `Offset` (and the `xValue` row's own `Scale`/`Offset`, which
 apply to the x axis) only move where a line is *drawn*, so that signals of
@@ -582,12 +665,11 @@ which is the quickest way to see a new data set:
 python tools/config_from_run.py path/to/run-directory -o run.json
 ```
 
-This writes one tab per data file and one graph per column, with the time
-column on the x axis. Columns whose values are not numeric, such as a text
-mode or state name, cannot be plotted as lines; they are listed in the
-tab's own markdown rather than dropped without notice. The generated file
-is a starting point meant to be edited, typically to group related signals
-onto shared axes.
+This writes one tab per data file, or per group of a multi-rate file, and
+one graph per column, with the time column on the x axis. A column of text,
+such as a mode or state name, is configured as an enumeration and plotted
+as steps (see Enumerations). The generated file is a starting point meant
+to be edited, typically to group related signals onto shared axes.
 
 ## Using the browser display
 
@@ -670,8 +752,9 @@ always what the axis is actually set to rather than whatever was last typed.
 An axis the gesture did not touch is left alone: zooming in x does not
 disturb the y boxes. Autoscaling, by double-click or the toolbar, blanks the
 pair, since blank means the full data range and the placeholder says what
-that is. On a `commonX` tab the graphs dragged along with the zoom update
-their x boxes too.
+that is. On a `commonX` tab the full x range is the tab's data extent, set
+as an explicit range, so the x boxes show those numbers instead; the
+graphs dragged along with a zoom update their x boxes too.
 
 The fields are plain text boxes rather than spin boxes, so no browser draws
 increment arrows beside them: a step of one is either nothing or everything
@@ -679,11 +762,6 @@ depending on the signal, and the arrows only ate width. Anything a number
 can be written as is accepted, including a decimal point, a leading minus
 and scientific notation such as `1.9e1`. Text that is not a number is
 ignored rather than reported as an error.
-
-This is what the range slider of earlier versions provided, plus the y axis
-it never had. The slider itself is gone, and with it the instruction to
-click the current tab before anything happened; typing a start and an end
-now takes effect immediately.
 
 **The two axes behave differently on a `commonX` tab**, and deliberately so:
 
@@ -711,7 +789,7 @@ it. It carries the standard Plotly controls:
 |---|---|
 | Zoom | Drag a rectangle to zoom into it. |
 | Pan | Drag to move the visible window. |
-| Box Select, Lasso Select | Select points, feeding the selection box below the graph. |
+| Box Select, Lasso Select | Select points, feeding the selection box beside the graph. |
 | Zoom in, Zoom out | Step the zoom about the centre. |
 | Autoscale, Reset axes | Return to the full data range. |
 | Download plot as a PNG | Save the current view as an image. |
@@ -720,7 +798,8 @@ Double-clicking inside a graph also resets the axes.
 
 ### Measurements on a graph
 
-Two feedback boxes sit below each graph, and both work alongside zooming.
+Two readout boxes sit beside each graph, under its range box, and both
+work alongside zooming.
 
 **Click Data.** Click any point on a line to record it. Click a second
 point and the box reports both positions and the difference between them:
@@ -850,40 +929,6 @@ Its tab `many` holds ten short graphs at four per page (three pages),
 `mixed` mixes graph heights on a `commonX` tab with no per-page setting
 (two pages), and `boundary` shows the 200 pixel threshold on a single page.
 `tools/make_hardcopy_demo_data.py` regenerates the data file.
-
-## Features not currently available
-
-These are documented in the older guide and are absent from the current
-version. They are recorded here so their absence is not mistaken for a
-fault.
-
-- **The x-axis range slider.** The original version placed a range slider
-  above each page, with text boxes, a submit and a reset button. It depended
-  on the reader clicking the current tab to trigger a redraw, and that
-  mechanism stopped working. The capability it provided is back as the
-  **X range** boxes beside each graph, described above; the slider widget
-  itself is not, and `xSliderStep` has been removed with it.
-- **Subplots.** `UseSubplots` grouped the graph sets of one sheet into a
-  single Plotly figure with shared axes. It had been disabled for some time,
-  printing `Subplots functionality disabled` on every run, and is now
-  removed outright. Blocks and `commonX` cover what it was for: several
-  graphs from several files on one tab, sharing one x range.
-- **Hover synchronised through subplots.** The original mechanism grouped
-  a sheet's graph sets into one Plotly figure and relied on the `visdcc`
-  package to inject the linking JavaScript. Both are gone. Synchronised
-  hover itself is not: it now covers every graph on the page rather than
-  only the subplots of one figure, and is implemented in
-  `assets/graphsync.js`, which Dash serves automatically and which needs no
-  package at all. The same file links the x axes of a `commonX` tab.
-- **The packaged executable and its Windows launcher.** `dash-lineplot.exe`,
-  `startPlotTool.bat` and the PyInstaller configuration package a Qt
-  desktop application that no longer exists. Start the script directly.
-- **Matlab (`.mat`) file support.** The reader that loaded `DATA`/`NAM`/
-  `TIME` from a Matlab file, and the `scipy` dependency it needed, have
-  been removed outright rather than carried forward. A `.mat` file named in
-  a configuration is not reported with a clear error; it falls through to
-  the generic text reader and fails confusingly. If Matlab support is
-  needed again, it has to be re-added, not just re-enabled.
 
 ## Further reading
 

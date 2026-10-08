@@ -70,6 +70,10 @@ them are the stable reference.
 | 11 | `suppress_callback_exceptions` is broader than it needs to be | Robustness | Low |
 | 12 | Modern-Python remainder (see list) | Modernisation | Low |
 | 13 | Click history held on the server, shared by every browser viewing it | Defect | Low |
+| 14 | Dead `UseSubplots` rows in the shipped configs and the config generator | Dead construct | Low |
+| 15 | Selection callbacks registered for graphs that have no selection box | Defect | Low |
+| 16 | 3 px seam between equal hardcopy slots | Cosmetic | Low |
+| 17 | Unreachable non-numeric fallback in `hasBoxColumn` | Dead construct | Low |
 
 ---
 
@@ -86,13 +90,13 @@ than fixed structurally, see
 
 | Global | Set in | Read in |
 |---|---|---|
-| `dfPlotterHeader` | `loadConfig:1521-1522` | `makeGraphSet:931-932`, `loadConfig:1525,1531-1532` |
-| `dfPlotterConfig` | `loadConfig:1540-1541,1582` | `prepareGraphs:1404,1410`, `loadData:1657-1659` |
-| `pageDensity` | `loadConfig:1529-1530,1534` | `makeGraphSet:1263,1287`, `makePage:1481` |
-| `divSets` | `prepareGraphs:1389,1395,1420` | `makePage:1448`, `render_content:1835` |
-| `graphTabs` | `prepareGraphs:1390,1398,1422` | `makePage:1450` |
-| `graphList` | `prepareGraphs:1391,1401,1421` | `setupCallbacks:1840` |
-| `dashApp` | `runDash:1731-1732` | throughout `runDash`, and `runPlotter:2164` |
+| `dfPlotterHeader` | `loadConfig:1650-1651` | `makeGraphSet:1029,1031`, `loadConfig:1654,1660-1661` |
+| `dfPlotterConfig` | `loadConfig:1683-1684,1725` | `prepareGraphs:1533,1539`, `loadData:1800-1802` |
+| `pageDensity` | `loadConfig:1658-1659,1663` | `makeGraphSet:1387,1411`, `makePage:1610` |
+| `divSets` | `prepareGraphs:1518,1524,1549` | `makePage:1577`, `render_content:1978` |
+| `graphTabs` | `prepareGraphs:1519,1527,1551` | `makePage:1579` |
+| `graphList` | `prepareGraphs:1520,1530,1550` | `setupCallbacks:1983` |
+| `dashApp` | `runDash:1874-1875` | throughout `runDash`, and `runPlotter:2314` |
 
 Consequences, in order of how much they cost:
 
@@ -103,7 +107,7 @@ Consequences, in order of how much they cost:
 - `makeGraphSet` reads `dfPlotterHeader` and `pageDensity` out of module
   scope while taking `dft` as an argument, so its inputs are half explicit
   and half ambient. Nothing about the signature says what it needs.
-- A callback closure reading `divSets` (`render_content:1835`) depends on
+- A callback closure reading `divSets` (`render_content:1978`) depends on
   `prepareGraphs` having run first, with no way to assert it.
 
 Fix: make all of them instance attributes -- `self.divSets`, `self.config`
@@ -139,16 +143,16 @@ The configuration index encodes set and trace numbers into the row label,
 `yValue#003-007`, and the graph code takes it apart with string surgery:
 
 ```python
-setStr = str(index).split('#')[1].split('-')[0]     # dash-lineplot.py:1012
-setStr = str(index).split('#')[1]                   # dash-lineplot.py:1147
+setStr = str(index).split('#')[1].split('-')[0]     # dash-lineplot.py:1112
+setStr = str(index).split('#')[1]                   # dash-lineplot.py:1254
 ```
 
 Membership is then tested by substring rather than equality:
 `'Datafile' in var_name`, `'Title' in var_name`, `'yLabel' in var_name`,
-`'yValue' in var_name` (`dash-lineplot.py:1561,1568,1571,1574`) -- so a
+`'yValue' in var_name` (`dash-lineplot.py:1704,1711,1714,1717`) -- so a
 `Variable` named `SubTitle` or `DatafileB` would be taken for a `Title` or
 a `Datafile` row. The tab label is derived as `graphTab.split('-')[1]`
-(`dash-lineplot.py:1422`), which truncates any sheet named
+(`dash-lineplot.py:1551`), which truncates any sheet named
 `graph-my-signals` to `my`.
 
 Fix: carry set and trace numbers as their own integer columns --
@@ -162,7 +166,7 @@ this project uses.
 
 ### 1.3 Duplicated configuration logic
 
-`readConfigTables` (`dash-lineplot.py:529`) and `workbookToDict` in
+`readConfigTables` (`dash-lineplot.py:620`) and `workbookToDict` in
 `tools/xlsx_config_to_json.py` each implement the `'graph' in sheetname`
 sheet filter and the openpyxl-for-sheet-order trick, and
 `CONFIG_COLUMNS`/`onCanonicalColumns` exist only in the former while the
@@ -189,7 +193,7 @@ largest run available before investing in any of them.
 
 `loadConfig` iterates each sheet row by row and writes back through `.loc`
 on every iteration, then grows the master frame with `pd.concat` inside
-the sheet loop (`dash-lineplot.py:1582`). Both are standard pandas
+the sheet loop (`dash-lineplot.py:1725`). Both are standard pandas
 anti-patterns: each `.loc` assignment on a mixed-dtype frame can copy, and
 each `concat` reallocates everything accumulated so far.
 
@@ -201,7 +205,7 @@ the column once, and collect the per-sheet frames in a list for a single
 ### 2.2 Trace data duplicated for the click/selection readout
 
 ```python
-self.graphTraces[grID] = [                                # dash-lineplot.py:1301
+self.graphTraces[grID] = [                                # dash-lineplot.py:1425
     (trace.get('name', ''), trace['x'], trace.get('customdata'),
      trace.get('text'))
     for trace in thisGraphData]
@@ -219,9 +223,9 @@ demand. The frames are already in memory.
 
 ### 2.3 Per-click work is linear and uncached
 
-`commonClickMessage` (`dash-lineplot.py:674`) calls `nearestSample` for
+`commonClickMessage` (`dash-lineplot.py:772`) calls `nearestSample` for
 every trace of every graph in a `commonX` group on every click, and
-`nearestSample` (`dash-lineplot.py:421`) builds a fresh `np.asarray` over
+`nearestSample` (`dash-lineplot.py:512`) builds a fresh `np.asarray` over
 the whole x column each time.
 
 Fix: cache the `numpy` x array per trace at build time. For a monotonic x
@@ -232,7 +236,7 @@ rather than linear time, and monotonicity can be checked once at load.
 ### 2.5 The configuration workbook is opened twice
 
 `readConfigTables` builds a `pd.ExcelFile` and then calls
-`oxl.load_workbook(configfile)` (`dash-lineplot.py:572`) for the sheet
+`oxl.load_workbook(configfile)` (`dash-lineplot.py:663`) for the sheet
 order, parsing the file twice. `pd.ExcelFile` already holds the openpyxl
 workbook as its `.book`, so the order is available without a second read.
 The same duplication exists in `tools/xlsx_config_to_json.py`.
@@ -242,7 +246,7 @@ The same duplication exists in `tools/xlsx_config_to_json.py`.
 ### 3.1 File-type dispatch is still substring-based
 
 ```python
-extension = Path(datapath).suffix.lower()    # dash-lineplot.py:1686 (case-folding now done)
+extension = Path(datapath).suffix.lower()    # dash-lineplot.py:1829 (case-folding now done)
 if 'xls' in extension: ...
 elif 'json' in extension: ...
 ```
@@ -264,7 +268,7 @@ clean-up would be.
 
 ### 3.3 `suppress_callback_exceptions` is broader than it needs to be
 
-Set unconditionally in `runDash` (`dash-lineplot.py:1745`), with a `#
+Set unconditionally in `runDash` (`dash-lineplot.py:1888`), with a `#
 todo` comment already in the code next to it. Now that callback
 registration is driven only by `graphList` (the graphs actually on the
 page), the only dynamic content that still needs suppression is the
@@ -301,8 +305,8 @@ failure mode `closed-history.md`'s N1 entry describes.
 
 The "Previous" and "Range" lines of the Click Data box come from history
 held on the server, in the `DashLinePlot` instance: `self.clickedData`
-(`dash-lineplot.py:646`, read and written by `display_click_data`) and
-`self.clickedX` (`dash-lineplot.py:657`, used by `commonClickMessage`).
+(`dash-lineplot.py:737`, read and written by `display_click_data`) and
+`self.clickedX` (`dash-lineplot.py:748`, used by `commonClickMessage`).
 Dash callbacks for every client run against that one instance, so two
 browser windows open on the same server feed one history per graph: a
 click in one window becomes the "Previous" point of the next click in
@@ -317,6 +321,69 @@ to the click callback as a `State` and returned as a second `Output`, so
 each page carries its own. Fold the four-element `self.clickedData`
 shape (3.4) onto the same two-element list `commonClickMessage` already
 uses while doing this, rather than moving both shapes into stores.
+
+### 3.7 Dead `UseSubplots` rows
+
+`UseSubplots` was removed as a feature, and nothing in `dash-lineplot.py`
+reads it any more, but the row survives on graph sheets: 2 in
+`commonx-example.json`, 3 in `hardcopy-example.json` and 1 in
+`dash-config-sim.xlsx` (`graph-xyPlot`, set to `True`), and
+`tools/config_from_run.py` still writes one into every sheet it
+generates. It is harmless -- unknown rows are ignored -- but it suggests a
+setting that does nothing. Both workbooks' `documentation` sheets also
+still describe it at row 53 as a live option ("Handle grpahs sets as
+sub-plots"), beside a row 82 that says it was removed. `dash-config.json`
+and `dash-config.xlsx` have no graph-sheet `UseSubplots` row.
+
+Fix: stop `config_from_run.py` emitting it, delete the graph-sheet rows
+from the JSON examples, and delete the stale row 53 of both
+`documentation` sheets. Edit the workbooks through their XML rather than
+openpyxl (see the handoff's note on openpyxl dropping parts), or leave
+the workbook rows until the workbooks are next edited for another reason.
+
+### 3.9 Selection callbacks for graphs without a selection box
+
+`generateFeedbackBoxes` adds the Rectangle Tool Selection Data box only
+when some trace on the graph has markers, but `setupCallbacks` registers
+`display_selected_data` / `display_common_selected_data` for every boxed
+graph. Graphs without markers therefore get a callback whose output,
+`select-<graph id>`, never exists: for example `select-graph-linked002`
+and `select-graph-independent002` in `commonx-example.json`, three in
+`dash-config.xlsx` (`Attitude000`, `Velocity000`, `xyPlot000`) and the
+same three in `dash-config.json`, and five in `dash-config-sim.xlsx`.
+Pre-existing: the code at `ef0bdf0`, before the hardcopy work, registers
+exactly the same list for the same configs (checked 2026-10-08). Harmless
+while `suppress_callback_exceptions` is on globally (3.3).
+
+Fix: record which graphs carry markers when `makeGraphSet` builds them
+(as `self.boxedGraphs` already records which have boxes), and register
+the selection callback only for those. Do this before, or together with,
+item 4.4's "every callback id exists in the layout" test, which would
+otherwise fail on exactly these.
+
+### 3.10 3 px seam between equal hardcopy slots
+
+With `HardcopyGraphsPerPage` set, `renderPage` in `assets/hardcopy.js`
+asks `Plotly.toImage` for `Math.floor(slot.h)` CSS px, but places each
+slot at `Math.round(slot.y * 300 / 96)` device px. With four slots on an
+A4 page that leaves a white line up to 3 px (0.25 mm) high between
+graphs, against the spec's "no gap". Barely visible, since the graph
+paper is white.
+
+Fix: compute each slot's top and bottom edges in device pixels, and draw
+the rendered image with `drawImage`'s destination size set to exactly
+that height, so neighbouring slots meet.
+
+### 3.11 Unreachable fallback in `hasBoxColumn`
+
+`hasBoxColumn` keeps the box column for a height that is not a number,
+but its only caller passes `ctx['height']`, which `resolveSetContexts`
+always produces through `cellFloat` with a default of 300, so the
+`except` branch never runs, though its docstring describes it. Kept
+because the CSS height code beside it in `makeGraphSet` guards the same
+way; remove both guards together, docstring sentence included, once
+`resolveSetContexts`'s float guarantee is made explicit (a test under
+item 4.2 would do).
 
 ## 4. Repository hygiene
 

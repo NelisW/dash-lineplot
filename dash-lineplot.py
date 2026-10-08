@@ -133,13 +133,20 @@ encoded_image = base64.b64encode(open(resourcePath('icons/logoSet2long.png'), 'r
 # set. Extra columns beyond this list are preserved.
 CONFIG_COLUMNS = ['Variable', 'Value', 'Format', 'LineLabel', 'GraphType',
                   'Scale', 'Offset', 'Colour', 'Linewidth', 'Dash', 'Mode',
-                  'MarkerOpacity', 'Categories', 'Datafile']
+                  'MarkerOpacity', 'Categories', 'Datafile', 'xValue']
 
 # A graph whose block Height is at or below this many pixels is drawn without
 # the range-entry and readout column beside it: on a graph that short the
 # boxes are taller than the plot, and a page of small graphs is usually
 # wanted for a compact overview or a hardcopy rather than for measurement.
 BOXES_MIN_HEIGHT = 200
+
+# The legend settings and their values when nothing sets them. The legend
+# sits inside the plot's top-right corner, vertical, on a white background
+# light enough to see the lines behind it and solid enough to read. Each can
+# be set for the page, a tab or one graph (resolveLegendSettings).
+LEGEND_DEFAULTS = {'LegendTransparency': 0.4, 'LegendOrientation': 'v',
+                   'LegendX': 1.0, 'LegendY': 1.0}
 
 # A hardcopy page the server may write: one file name, no directory part,
 # none of the characters Windows refuses, ending in .png. The browser
@@ -309,6 +316,90 @@ def hasBoxColumn(height):
         return float(height) > BOXES_MIN_HEIGHT
     except (TypeError, ValueError):
         return True
+
+################################################################
+def legendTransparencyValue(value):
+    """
+    A LegendTransparency cell as a number from 0 to 1, or None when it is
+    blank, not a number, or out of range. 0 makes the legend background solid
+    white, 1 fully see-through, so the plot shows behind the legend.
+    """
+    number = cellFloat(value, None)
+    if number is None or not 0 <= number <= 1:
+        return None
+    return number
+
+################################################################
+def legendOrientationValue(value):
+    """A LegendOrientation cell as 'v' or 'h', or None for anything else."""
+    text = cellText(value).lower() if isinstance(value, str) else ''
+    return text if text in ('v', 'h') else None
+
+################################################################
+def legendPositionValue(value):
+    """
+    A LegendX or LegendY cell as a number from 0 to 1, or None otherwise.
+
+    0 to 1 spans the plot area, so the legend stays inside it: outside,
+    Plotly widens that graph's margin, and stacked graphs would no longer
+    line up in x.
+    """
+    number = cellFloat(value, None)
+    if number is None or not 0 <= number <= 1:
+        return None
+    return number
+
+# each legend setting's checker, and what a valid value is, for the warning
+LEGEND_CHECKS = {
+    'LegendTransparency': (legendTransparencyValue, 'a number from 0 to 1'),
+    'LegendOrientation': (legendOrientationValue, "'v' or 'h'"),
+    'LegendX': (legendPositionValue, 'a number from 0 to 1'),
+    'LegendY': (legendPositionValue, 'a number from 0 to 1'),
+}
+
+################################################################
+def resolveLegendSettings(dft, pageSettings, sheetName):
+    """
+    The legend settings of each graph on a sheet.
+
+    Each setting in LEGEND_DEFAULTS is resolved on its own, at three levels,
+    each overriding the one before: the header for the page; a row before the
+    sheet's first Title for the whole tab; and a row after a graph's Title,
+    before the next Title, for that graph alone. Unlike Include or ToDisk,
+    the row's position is what says which: a row at the end of a sheet
+    belongs to its last graph. A value its checker refuses is reported and
+    ignored.
+
+    Args:
+        | dft (DataFrame): the rows of one graph sheet, in sheet order.
+        | pageSettings (dict): the page-wide values, from the header.
+        | sheetName (string): for the warning.
+
+    Returns:
+        | settings (dict): set number as '000', '001', ... to a dict with
+          every key of LEGEND_DEFAULTS.
+
+    """
+    tabSettings = dict(pageSettings)
+    graphSettings = {}
+    setNumber = -1
+    for _, row in dft.iterrows():
+        variable = row['Variable']
+        if variable == 'Title':
+            setNumber += 1
+        elif variable in LEGEND_CHECKS and cellText(row['Value']):
+            check, valid = LEGEND_CHECKS[variable]
+            value = check(row['Value'])
+            if value is None:
+                print(f"{variable} '{cellText(row['Value'])}' on sheet "
+                      f"'{sheetName}' is not {valid}; ignored.")
+            elif setNumber < 0:
+                tabSettings[variable] = value
+            else:
+                graphSettings.setdefault(setNumber, {})[variable] = value
+
+    return {f'{k:03d}': dict(tabSettings, **graphSettings.get(k, {}))
+            for k in range(setNumber + 1)}
 
 ################################################################
 def resolveSetContexts(dft):
@@ -662,6 +753,13 @@ class DashLinePlot:
         # the values the data file actually held
         self.graphXAxis = {}
 
+        # page-wide legend settings, from the header (loadConfig)
+        self.legend = dict(LEGEND_DEFAULTS)
+
+        # [xmin, xmax] of the tab, in plotted units, for every graph of a
+        # commonX tab: its start range, and where Reset returns it to
+        self.commonXExtent = {}
+
         # ids of the graphs drawn with the range-entry and readout column
         # beside them; graphs of BOXES_MIN_HEIGHT or less have none, and
         # get no callbacks that would write into it
@@ -929,7 +1027,8 @@ class DashLinePlot:
 
         # get the header info from the header sheet in the config file
         pagetop = dfPlotterHeader.loc['PageTop','Value'] if 'PageTop' in dfPlotterHeader.index else ''
-        pagebottom = self.dateCreated + ' ' + dfPlotterHeader.loc['PageBottom','Value'] if 'PageBottom' in dfPlotterHeader.index else ''
+        # cellText, because a blank PageBottom cell arrives as NaN, not ''
+        pagebottom = self.dateCreated + ' ' + cellText(dfPlotterHeader.loc['PageBottom','Value']) if 'PageBottom' in dfPlotterHeader.index else ''
         
         # create graphs output folder if not exist
         grDir = './graphs'
@@ -961,6 +1060,7 @@ class DashLinePlot:
         # row applies to every graph below it until the next one. A sheet with
         # a single block behaves exactly as it always did.
         setContexts = resolveSetContexts(dft)
+        legendSettings = resolveLegendSettings(dft, self.legend, graph)
 
         # short graphs on a commonX tab line up with the boxed ones, if any
         alignToBoxes = commonX and any(hasBoxColumn(c['height'])
@@ -1032,9 +1132,16 @@ class DashLinePlot:
 
             traceDf = self.datafiles[dataref]
 
-            if ctx['xvalue'] not in traceDf.columns:
+            # Files from different sources may name their time column
+            # differently, so an xValue cell on this row overrides the
+            # block's xValue for this trace alone, exactly as its Datafile
+            # cell overrides the block's file. The x scale, offset, label and
+            # format stay the block's: the graph has one x axis.
+            xColumn = cellText(row['xValue'], ctx['xvalue'])
+
+            if xColumn not in traceDf.columns:
                 raise ValueError(
-                    f"Sheet '{graph}': xValue '{ctx['xvalue']}' is not a "
+                    f"Sheet '{graph}': xValue '{xColumn}' is not a "
                     f"column of {dataref}. Columns available: "
                     f"{', '.join(str(c) for c in traceDf.columns)}.")
 
@@ -1044,7 +1151,7 @@ class DashLinePlot:
                     f"column of {dataref}. Columns available: "
                     f"{', '.join(str(c) for c in traceDf.columns)}.")
 
-            rawX = traceDf[ctx['xvalue']]
+            rawX = traceDf[xColumn]
             traceX = rawX * ctx['xscale'] + ctx['xoffset']
 
             xlo, xhi = traceX.min(), traceX.max()
@@ -1235,9 +1342,17 @@ class DashLinePlot:
             # plot area instead means every graph's plot area is exactly
             # the margin-defined width, so the x axes of stacked graphs
             # align regardless of what their legends say.
+            # LegendX and LegendY may move it, but only within the plot area
+            # (0 to 1), for the same reason. 'auto' anchoring takes the
+            # legend's side nearest its position, so the default (1, 1)
+            # anchors its top-right corner there, and (0, 0) its bottom-left.
+            legend = legendSettings[setStr]
             legendDict = {
-                'x': 1, 'y': 1, 'xanchor': 'right', 'yanchor': 'top',
-                'bgcolor': 'rgba(255, 255, 255, 0.6)',
+                'x': legend['LegendX'], 'y': legend['LegendY'],
+                'xanchor': 'auto', 'yanchor': 'auto',
+                'orientation': legend['LegendOrientation'],
+                # rgba's alpha is opacity, the complement of transparency
+                'bgcolor': f"rgba(255, 255, 255, {1 - legend['LegendTransparency']:g})",
                 'bordercolor': 'rgba(0, 0, 0, 0.15)', 'borderwidth': 1,
             }
 
@@ -1251,6 +1366,16 @@ class DashLinePlot:
                                 'plot_bgcolor': backgroundColor,
                                 },
                         'data':thisGraphData}
+
+            # Plotly pads the automatic range of any trace drawn with
+            # markers, even invisible ones, but not of a lines-only trace,
+            # so the graphs of a commonX tab would start on different x
+            # ranges. Start them all on the tab's data extent instead; Reset
+            # and Plotly's Autoscale return to it (apply_ranges,
+            # assets/graphsync.js).
+            if commonX and xmin is not None:
+                figdict['layout']['xaxis']['range'] = [float(xmin), float(xmax)]
+                figdict['layout']['xaxis']['autorange'] = False
 
             # Plotly's default margins reserve about 100 px above and 80 px
             # below the plot area. On a short graph that leaves a thin strip
@@ -1303,6 +1428,8 @@ class DashLinePlot:
                  trace.get('text'))
                 for trace in thisGraphData]
             self.graphXAxis[grID] = (ctx['xscale'], ctx['xoffset'])
+            if commonX and xmin is not None:
+                self.commonXExtent[grID] = [float(xmin), float(xmax)]
 
             # A short graph gets no readout column: see BOXES_MIN_HEIGHT. It
             # takes the whole row, except on a commonX tab that also has
@@ -1363,12 +1490,15 @@ class DashLinePlot:
         # One container for the whole tab. assets/hardcopy.js finds the tab
         # on screen through it, and reads the default file name and the
         # graphs-per-page setting from its data attributes, so the hardcopy
-        # needs no callback of its own.
+        # needs no callback of its own. assets/graphsync.js reads the x
+        # extent of a commonX tab from it, to answer Plotly's Autoscale.
         perPageRows = dft[dft['Variable'] == 'HardcopyGraphsPerPage']['Value']
         tabDiv = html.Div(className='graph-tab', children=thisDivList, **{
             'data-tab-name': graph.split('-')[1],
             'data-hardcopy-per-page':
                 hardcopyPerPage(perPageRows.values[0]) if not perPageRows.empty else '',
+            'data-x-extent':
+                f'{float(xmin)!r},{float(xmax)!r}' if commonX and xmin is not None else '',
         })
 
         return [tabDiv], grList, xmin, xmax
@@ -1535,6 +1665,20 @@ class DashLinePlot:
             else:
                 print(f"Density '{requested}' not recognised, using 'compact'. "
                       f"Valid values are 'compact' and 'comfortable'.")
+
+        # legend settings for the page; a sheet or a single graph may
+        # override each of them (resolveLegendSettings)
+        self.legend = dict(LEGEND_DEFAULTS)
+        for setting, (check, valid) in LEGEND_CHECKS.items():
+            if setting not in dfPlotterHeader.index:
+                continue
+            requested = dfPlotterHeader.loc[setting, 'Value']
+            value = check(requested)
+            if value is not None:
+                self.legend[setting] = value
+            elif cellText(requested):
+                print(f"{setting} '{cellText(requested)}' in the header is "
+                      f"not {valid}; using {LEGEND_DEFAULTS[setting]}.")
 
         # dataframe to contain ALL the sheets' info
         global dfPlotterConfig
@@ -1874,7 +2018,8 @@ class DashLinePlot:
                 + [State('yend-' + sibling, 'value') for sibling in xGroup],
                 prevent_initial_call=True
             )
-            def apply_ranges(*args, _group=xGroup, _self=theGraph):
+            def apply_ranges(*args, _group=xGroup, _self=theGraph,
+                             _extent=self.commonXExtent.get(theGraph)):
                 fired = dash.callback_context.triggered
                 if not fired or fired[0]['value'] is None:
                     return dash.no_update
@@ -1892,7 +2037,13 @@ class DashLinePlot:
 
                 patched = Patch()
                 if action == 'xreset':
-                    patched['layout']['xaxis']['autorange'] = True
+                    # a commonX tab goes back to its shared start range: an
+                    # autorange would pad the graphs with markers again
+                    if _extent is not None:
+                        patched['layout']['xaxis']['autorange'] = False
+                        patched['layout']['xaxis']['range'] = _extent
+                    else:
+                        patched['layout']['xaxis']['autorange'] = True
                     if mine:
                         patched['layout']['yaxis']['autorange'] = True
                     return patched

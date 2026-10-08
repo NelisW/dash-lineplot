@@ -282,12 +282,12 @@ from Python. Verification is therefore manual, in Chrome or Edge, against
 servers started on ports from 8120 upward:
 
 1. Each shipped configuration (`dash-config.xlsx`, `dash-config-sim.xlsx`,
-   `dash-config.json`, `commonx-example.json`, `dash-3dof.xlsx`) still
-   loads, and its range-entry, click and selection boxes still work. One
-   included tab is affected by R1: `graph-gimbal` in `dash-config.xlsx`
-   has `Height` 200, so its two graphs lose their boxes. The same sheet in
-   `dash-config.json` has `Include` false. Every other included sheet has
-   a `Height` of 220 or more and is unchanged.
+   `dash-config.json`, `commonx-example.json`) still loads, and its
+   range-entry, click and selection boxes still work. One included tab is
+   affected by R1: `graph-gimbal` in `dash-config.xlsx` and
+   `dash-config.json` has `Height` 200, so its two graphs lose their
+   boxes. Every other included sheet has a `Height` of 220 or more and is
+   unchanged.
 1. `hardcopy-example.json`: tab `many` and the 150 and 200 graphs show no
    boxes; the 201 and 300 graphs do; typing an x range on a boxed graph of
    tab `mixed` zooms all six graphs.

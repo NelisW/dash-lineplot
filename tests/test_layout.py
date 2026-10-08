@@ -74,6 +74,42 @@ def test_commonx_tab_of_only_short_graphs_is_full_width(dlp, build, tmp_path):
         assert props(parentOf(dlp.divSets, g))['className'] == 'twelve columns'
 
 
+def shortConfigRows():
+    return [{'Variable': 'Height', 'Value': 300},
+            {'Variable': 'Datafile', 'Value': 'data/hardcopy-demo.csv'},
+            {'Variable': 'xValue', 'Value': 'Time'},
+            {'Variable': 'Title', 'Value': 'Ramp'},
+            {'Variable': 'yLabel', 'Value': 'Ramp'},
+            {'Variable': 'yValue', 'Value': 'Ramp'}]
+
+
+def footerText(dlp):
+    footers = [props(c)['children'] for tab in dlp.divSets for c in walk(tab[0])
+               if str(props(c).get('id', '')).startswith('footerMarkdown-')]
+    assert len(footers) == 1
+    return footers[0]
+
+
+def test_null_page_bottom_builds_with_date_only(dlp, build, tmp_path):
+    config = tmp_path / 'nullfooter.json'
+    config.write_text(json.dumps({'header': {'Pagetitle': 'f', 'PageBottom': None},
+                                  'sheets': {'graph-f': shortConfigRows()}}))
+    plotter = build(str(config))
+    assert footerText(dlp).strip() == plotter.dateCreated
+
+
+def test_blank_page_bottom_cell_in_a_workbook_builds(dlp, build, tmp_path):
+    import pandas as pd
+    workbook = tmp_path / 'blankfooter.xlsx'
+    with pd.ExcelWriter(workbook) as writer:
+        pd.DataFrame([{'Variable': 'Pagetitle', 'Value': 'f'},
+                      {'Variable': 'PageBottom', 'Value': None}]).to_excel(
+            writer, sheet_name='header', index=False)
+        pd.DataFrame(shortConfigRows()).to_excel(writer, sheet_name='graph-f', index=False)
+    plotter = build(str(workbook))
+    assert footerText(dlp).strip() == plotter.dateCreated
+
+
 def test_unboxed_graph_full_width(dlp, build):
     build('hardcopy-example.json')
     root = dlp.divSets

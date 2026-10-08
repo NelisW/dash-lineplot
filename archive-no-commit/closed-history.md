@@ -477,6 +477,104 @@ them changes behaviour. Variants of `commonx-example.json` run in a
 scratch directory: no row, blank, and `False` each wrote 0 files; `True`
 wrote 6.
 
+## Pass 6 -- 2026-10-08 (hardcopy review triage)
+
+The whole-change review of the hardcopy work (see the handoff history)
+raised findings that were triaged into `suggestedwork.md` as items
+3.6 to 3.11 (3.6 since closed, below). Three edge cases were instead
+accepted as they are, and are recorded here so they are not raised again
+as new findings:
+
+- **A very large `HardcopyGraphsPerPage`** (around 1000 or more) makes
+  each slot round down to zero height, and `Plotly.toImage` then fails.
+  The failure is reported in the hardcopy box, and no real configuration
+  asks for more graphs per page than fit legibly. Not pursued.
+- **Windows reserved names** (`CON`, `NUL`, `COM1`, ...) and control
+  characters are not refused by `cleanName` in the browser. The server's
+  `HARDCOPY_NAME` refuses control characters but not the reserved names;
+  a write to such a name fails and the error is shown in the box. Not
+  pursued.
+- **AltGr+H on AltGr keyboard layouts.** On Windows, AltGr arrives in
+  the browser with both `ctrlKey` and `altKey` set, so on a layout where
+  AltGr+H types a character the hardcopy box opens instead (raised by the
+  review; not reproduced, since no such layout was at hand). The key combination was fixed by the spec, and the
+  box is cancelled with Escape. Not pursued unless it turns out to bite.
+
+### Former 3.6: `dash-config.json` had drifted from `dash-config.xlsx` -- closed
+
+As found: the JSON file, documented as the converted equivalent of the
+workbook, had last been generated before several workbook edits.
+Converting the workbook afresh and comparing showed `Include` false in
+the JSON for `xyPlot`, `Attitude` and `gimbal` (true in the workbook, so
+the JSON page had three tabs fewer); the removed `UseSubplots` row in the
+JSON wherever the workbook has `commonX`, which lost the workbook's
+`commonX` true on `MissilePosition`, `gimbal` and `gimbalFromxls`; and
+one extra `UseSubplots` row on `graph-gimbalFromxls`.
+
+Fix: per the standing decision that the workbook is the reference,
+`dash-config.json` was regenerated from it with
+`python tools/xlsx_config_to_json.py dash-config.xlsx` -- no hand edits.
+
+Verified: the diff is exactly those rows (11 lines in, 15 out); pages
+built from the workbook and from the JSON are identical in tab list,
+graph ids, `commonX` groups, boxed graphs, and the serialised page with
+every figure; the JSON page served from a scratch directory loads all six
+tabs with `commonX` on both gimbal tabs and no failed request; 15 pytest
+and 8 node tests pass. A test comparing the two formats (open item 4.2's
+`readConfigTables` comparison) would have caught the drift.
+
+### Former 3.12: a blank `PageBottom` header cell crashed the page build -- closed
+
+As found: `makeGraphSet` built the footer as
+`self.dateCreated + ' ' + dfPlotterHeader.loc['PageBottom','Value']`. A
+workbook `header` sheet with a `PageBottom` row whose `Value` cell is
+empty reads that cell as NaN, and so does a JSON header with
+`"PageBottom": null`; the concatenation then raised
+`TypeError: can only concatenate str (not "float") to str` before any
+page was served. `"PageBottom": ""`, a missing row and a blank `PageTop`
+were all fine, and none of the shipped configs has a blank
+`PageBottom`. Found while checking a workbook form of
+`multisource-example.json`.
+
+Fix: the cell is read through `cellText`, as the rest of the header and
+sheet code already is, so a blank cell gives the date alone. `cellText`
+also trims leading and trailing whitespace from a non-blank footer; for
+the shipped `dash-config.json` that drops only a trailing newline, which
+renders identically.
+
+Verified: two tests in `tests/test_layout.py`
+(`test_null_page_bottom_builds_with_date_only`,
+`test_blank_page_bottom_cell_in_a_workbook_builds`) failed with the
+`TypeError` first and pass now; 21 pytest and 8 node tests pass.
+
+### Former 3.8: marker traces padded the x autorange on a `commonX` tab -- closed
+
+As found: Plotly pads the automatic x range of a trace drawn with markers
+-- even at `MarkerOpacity` 0, which is how the shipped configs make lines
+selectable -- but not of a lines-only trace. On a `commonX` tab mixing
+the two, the graphs started on different x ranges (about -1.26 to 21.26
+against 0 to 20 on `hardcopy-example.json`'s `mixed` tab) and lined up
+only after the first zoom; Reset and Plotly's Autoscale brought the
+mismatch back.
+
+Fix: on a `commonX` tab `makeGraphSet` gives every figure the tab's data
+extent as an explicit start range (`autorange` off) and records it in
+`self.commonXExtent`; the tab wrapper carries it as `data-x-extent`.
+Reset in `apply_ranges` patches that range back instead of an autorange;
+`assets/graphsync.js` turns an Autoscale on such a tab into the same
+explicit range, applied to every graph of the group including the one
+autoscaled. Plotly's Reset axes and double-click already return to the
+start range. Tabs without `commonX` are unchanged.
+
+Verified: `tests/test_commonx_range.py` -- start range, wrapper attribute,
+and Reset driven through Dash's own update endpoint -- failed first for
+the three new behaviours and passes; in the browser, with the committed
+`graphsync.js` an Autoscale on a marker graph left two graphs at
+-1.26..21.26 and four at 0..20, and with the new one every path (start,
+Autoscale on a marker graph and on a lines graph, Reset axes, box Reset)
+leaves all six at 0..20; Autoscale on a tab without `commonX` still
+autoranges that graph alone.
+
 ---
 
 ## Superseded findings (later findings replaced these; kept only as a pointer)

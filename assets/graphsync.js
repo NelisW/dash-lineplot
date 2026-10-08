@@ -13,7 +13,9 @@
  *   Common x     graphs whose row carries the common-x class share one x
  *                range: zooming, panning or autoscaling any of them applies
  *                the same range to all the others. Set by commonX in the
- *                configuration.
+ *                configuration. Autoscale sends them all to the tab's data
+ *                extent rather than to Plotly's autorange, which pads
+ *                graphs drawn with markers and so would not line them up.
  *
  * Each graph resolves an x against its own samples, so graphs recorded at
  * different rates each show their own nearest sample. Nothing is
@@ -67,6 +69,20 @@
         return Array.prototype.slice.call(
             row.parentNode.querySelectorAll(
                 '.graph-row.common-x .js-plotly-plot'));
+    }
+
+    // The x data extent of a commonX tab, [min, max], from the data-x-extent
+    // attribute makeGraphSet puts on the tab's graph-tab wrapper; null on
+    // any other tab.
+    function xExtentOf(gd) {
+        var tab = gd.closest ? gd.closest('.graph-tab') : null;
+        var text = tab ? tab.getAttribute('data-x-extent') : '';
+        if (!text) {
+            return null;
+        }
+        var extent = text.split(',').map(Number);
+        return (extent.length === 2 && isFinite(extent[0]) && isFinite(extent[1]))
+            ? extent : null;
     }
 
     // Every subplot of one graph, e.g. ['xy'] or ['xy', 'xy2', ...].
@@ -138,7 +154,16 @@
         }
 
         var update = null;
-        if (eventdata['xaxis.autorange'] === true) {
+        var includeSource = false;
+        var extent = xExtentOf(source);
+        if (eventdata['xaxis.autorange'] === true && extent !== null) {
+            // Plotly's Autoscale pads a graph drawn with markers but not a
+            // lines-only one, so autorange would leave the graphs of the
+            // tab on different x ranges. Send every graph, this one
+            // included, to the tab's data extent instead.
+            update = { 'xaxis.range[0]': extent[0], 'xaxis.range[1]': extent[1] };
+            includeSource = true;
+        } else if (eventdata['xaxis.autorange'] === true) {
             update = { 'xaxis.autorange': true };
         } else if (eventdata['xaxis.range[0]'] !== undefined &&
                    eventdata['xaxis.range[1]'] !== undefined) {
@@ -159,14 +184,14 @@
         }
 
         var group = xGroupOf(source);
-        if (group.length < 2) {
+        if (group.length < 2 && !includeSource) {
             return;
         }
 
         // Hold each target's mark until its own relayout has settled, so the
         // echo it emits on completion is recognised as ours and dropped.
         group.forEach(function (gd) {
-            if (gd === source) {
+            if (gd === source && !includeSource) {
                 return;
             }
             markDriven(gd);

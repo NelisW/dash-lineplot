@@ -1,7 +1,9 @@
 # Handoff History -- 2026-09 onward
 
-Status: current, actively appended. Will be closed and superseded by 002
-once it crosses 30 KB -- see `handoff.md` section 8 for the index.
+Status: closed 2026-10-08 at session end, frozen, at 29.7 KB -- just under
+the 30 KB cadence limit, which the next entry would have crossed.
+Superseded by `handoff-history-002-2026-10-onward.md` -- see
+`handoff.md` section 8.
 
 The first four sessions below (labelled by the date they happened rather
 than renumbered from scratch) are a consolidation of material that was
@@ -516,3 +518,12 @@ Spec R3 amended, userguide, SDD (Hardcopy routes subsection, regenerated
 code map), README, `suggestedwork.md` citations (remapped from
 `ef0bdf0`, verified) updated. Noticed: the user had staged the deletion
 of `dash-3dof.xlsx`; left alone.
+
+At the user's request, `dash-3dof.xlsx` references removed from
+`handoff.md` (inventory row, section 4 aside, section 6 verification
+list) and from the spec's verification list; history files,
+`closed-history.md`, the executed plan and `prompt.md` left as records.
+The userguide's Blocks example was then rewritten with neutral names
+(`run/actuator.json`, `run/sensor.json`) in place of the `CB_3dof`
+telemetry paths; the multi-rate example stays, as it describes the
+bundled `data/example-multirate.json`.

@@ -4,7 +4,8 @@
     "PageTop": "The PageTop field is rendered as a Markdown block at the top of the page.  \nThis viewer plots column data in CSV files as (t,y) or (x,y) line graphs.",
     "PageBottom": "The PageBottom field is rendered as a Markdown block at the bottom of the page.  \n\nMarkdown and HTML tables do not seem to work. See [here](https://community.plot.ly/t/tables-in-markdown/15823/3).  Maybe soon.  \nIn the meantime use [Plotly tables](https://plot.ly/python/table/), but this would require working at the code level, not just in this config file.\n",
     "Datafile": "none",
-    "Density": "compact"
+    "Density": "compact",
+    "LegendTransparency": 0.7
   },
   "sheets": {
     "graph-RelativePosition": [
@@ -89,7 +90,7 @@
         "Value": true
       },
       {
-        "Variable": "UseSubplots",
+        "Variable": "commonX",
         "Value": false
       }
     ],
@@ -153,7 +154,7 @@
         "Value": false
       },
       {
-        "Variable": "UseSubplots",
+        "Variable": "commonX",
         "Value": false
       }
     ],
@@ -194,14 +195,14 @@
       },
       {
         "Variable": "Include",
-        "Value": false
+        "Value": true
       },
       {
         "Variable": "ToDisk",
         "Value": false
       },
       {
-        "Variable": "UseSubplots",
+        "Variable": "commonX",
         "Value": false
       }
     ],
@@ -258,8 +259,8 @@
         "Value": false
       },
       {
-        "Variable": "UseSubplots",
-        "Value": false
+        "Variable": "commonX",
+        "Value": true
       }
     ],
     "graph-Attitude": [
@@ -325,14 +326,14 @@
       },
       {
         "Variable": "Include",
-        "Value": false
+        "Value": true
       },
       {
         "Variable": "ToDisk",
         "Value": false
       },
       {
-        "Variable": "UseSubplots",
+        "Variable": "commonX",
         "Value": false
       }
     ],
@@ -425,15 +426,15 @@
       },
       {
         "Variable": "Include",
-        "Value": false
+        "Value": true
       },
       {
         "Variable": "ToDisk",
         "Value": false
       },
       {
-        "Variable": "UseSubplots",
-        "Value": false
+        "Variable": "commonX",
+        "Value": true
       }
     ],
     "graph-gimbalFromxls": [
@@ -533,10 +534,6 @@
       {
         "Variable": "ToDisk",
         "Value": true
-      },
-      {
-        "Variable": "UseSubplots",
-        "Value": false
       },
       {
         "Variable": "commonX",

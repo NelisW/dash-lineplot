@@ -1,6 +1,6 @@
 ---
 title: "dash-lineplot Software Design Description"
-date: "2026-10-07"
+date: "2026-10-08"
 pdf-engine: lualatex
 style: |
   .markdown-preview.markdown-preview {
@@ -41,8 +41,8 @@ tool, see `docs/userguide.md`, and for open defects and planned work, see
 
 Source references are given as function names, which are stable. The code
 map at the end of this document gives the line range of each function in
-`dash-lineplot.py` as of 2026-10-07; those numbers drift as the file is
-edited, the names do not.
+`dash-lineplot.py`; those numbers drift as the file is edited, the names do
+not.
 
 ## Purpose and scope
 
@@ -65,14 +65,17 @@ In scope:
   file.
 - Serving an interactive page: tabs, linked hover, shared x range per tab,
   typed axis ranges, click and selection readouts.
+- Plotting one quantity from several data files on one graph, each file
+  with its own x column and sample grid.
 - Optionally writing each figure to a standalone HTML file.
+- Writing the graphs of one tab as A4, 300 dpi PNG pages (hardcopy).
 
 Out of scope, by design:
 
 - Merging, aligning or resampling tables. Each table is drawn at its own
   sample rate.
 - Any desktop window. The page is served to the system browser.
-- Matlab `.mat` input (removed).
+- Matlab `.mat` input.
 
 ## Design rules
 
@@ -100,8 +103,9 @@ without a deliberate decision.
    +--------------------------------------------------------+
             |  HTTP on 127.0.0.1:<port>          | optional
             v                                    v
-   system browser: Dash renderer, Plotly.js,   ./graphs/*.html
-   assets/graphsync.js, assets/*.css
+   system browser: Dash renderer, Plotly.js,   ./graphs/*.html (ToDisk)
+   assets/graphsync.js, assets/hardcopy.js,    ./*.png (hardcopy, written
+   assets/*.css                                 through /_hardcopy routes)
 ```
 
 The process serves one page, built once at start-up from one
@@ -143,10 +147,11 @@ configuration. Several processes may run at once, each on its own port
     1. `freePort` returns the first verified free port at or above the
        requested one, stored in `self.port`; if it differs, a notice is
        printed.
-    1. Starts `runDash` on `self.port` in a daemon thread. `runDash` creates the Dash app
-       (module-level `dashApp`), registers callbacks through
-       `setupCallbacks`, and calls `dashApp.run(debug=False,
-       use_reloader=False)`.
+    1. Starts `runDash` on `self.port` in a daemon thread. `runDash`
+       creates the Dash app (module-level `dashApp`), registers callbacks
+       through `setupCallbacks` and the hardcopy routes through
+       `setupHardcopyRoutes(dashApp.server, Path.cwd())`, and calls
+       `dashApp.run(debug=False, use_reloader=False)`.
 1. The main thread prints the URL, from `self.port`, and blocks on `threading.Event().wait()`
    until Ctrl+C.
 
@@ -176,8 +181,8 @@ gives `Attitude`).
 
 Every graph sheet is reindexed onto `CONFIG_COLUMNS` (`Variable`, `Value`,
 `Format`, `LineLabel`, `GraphType`, `Scale`, `Offset`, `Colour`,
-`Linewidth`, `Dash`, `Mode`, `MarkerOpacity`, `Categories`, `Datafile`),
-so a column a JSON configuration omits still exists as NaN. Extra columns
+`Linewidth`, `Dash`, `Mode`, `MarkerOpacity`, `Categories`, `Datafile`,
+`xValue`), so a column a JSON configuration omits still exists as NaN. Extra columns
 are preserved.
 
 ### Row labelling
@@ -190,7 +195,7 @@ adding a `Graph` column (sheet name) and an `Index` label per row:
 | `Title` | `Title#NNN` | Opens graph set `NNN` (zero-based, three digits) on this sheet. |
 | `yLabel` | `yLabel#NNN` | y-axis label and hover format of set `NNN`; resets the trace counter. |
 | `yValue` | `yValue#NNN-MMM` | Trace `MMM` of set `NNN`. |
-| anything else | the variable name | Sheet-level settings such as `Height`, `Datafile`, `commonX`, `ToDisk`, `Include`, `GraphTop`, `GraphBottom`. |
+| anything else | the variable name | Sheet-level settings such as `Height`, `Datafile`, `commonX`, `ToDisk`, `Include`, `GraphTop`, `GraphBottom`, `HardcopyGraphsPerPage`, and the legend rows (see Figures). |
 
 Downstream code recovers the set and trace numbers by splitting these
 labels on `#` and `-`. A `Datafile` value of `master` is replaced by the
@@ -202,8 +207,8 @@ header's `Datafile`.
 `xLabel` and `xValue` rows update a running context; each `Title` row
 snapshots it for the graph set it opens. One sheet can therefore carry
 several data files, each with its own x column, scale and offset. A
-`yValue` row's own `Datafile` cell overrides the block's data file for that
-trace only.
+`yValue` row's own `Datafile` and `xValue` cells override the block's data
+file and x column for that trace only (see Traces).
 
 The context holds `datafile`, `xvalue`, `xlabel`, `xformat` (default
 `.4f`), `xscale` (default 1.0), `xoffset` (default 0.0) and `height`
@@ -216,7 +221,8 @@ The context holds `datafile`, `xvalue`, `xlabel`, `xformat` (default
 | `Pagetitle` | Browser tab title. |
 | `Datafile` | Substituted wherever a sheet or row says `master`. |
 | `Density` | `compact` (default) or `comfortable`; anything else prints a warning and uses `compact`. |
-| `PageTop`, `PageBottom` | Markdown above and below each tab's graphs; `PageBottom` is prefixed with the date of the run. |
+| `LegendTransparency`, `LegendOrientation`, `LegendX`, `LegendY` | Page-wide legend settings, into `self.legend` (defaults in `LEGEND_DEFAULTS`); a refused value prints a warning and keeps the default. Graph sheets may override each per tab and per graph (see Figures). |
+| `PageTop`, `PageBottom` | Markdown above and below each tab's graphs; `PageBottom` is read through `cellText` and prefixed with the date of the run, so a blank cell gives the date alone. |
 
 ### Cell parsing
 
@@ -248,7 +254,7 @@ Dispatch is on the lower-cased file extension:
 | `json` | `readJsonData` | See below. |
 | anything else | `readdatafile` | Comma, tab or whitespace separated text. |
 
-`readdatafile` handles an optional Matlab-style header: leading lines that
+`readdatafile` handles an optional `%` comment header: leading lines that
 start with `%` are skipped, and the first of them, with the `%` removed,
 supplies the column names. Without a `%` line, the first line is the
 header. Separators are the regular expression `,|\t|\s+` (pandas' Python
@@ -274,10 +280,14 @@ for each `Title` row it assembles the traces of that set into one figure.
 For each trace:
 
 - The data frame is the block's file, or the row's own `Datafile`
-  override. A reference that was not loaded, an x column or a y column
-  that does not exist, all raise a `ValueError` naming the sheet, the row
-  and what was available.
-- Plotted x is `raw_x * xscale + xoffset`.
+  override. The x column is the block's `xValue`, or the row's own
+  `xValue` cell when set, looked up in that same frame; this is what lets
+  one graph carry files that name their time column differently. A
+  reference that was not loaded, an x column or a y column that does not
+  exist, all raise a `ValueError` naming the sheet, the row and what was
+  available.
+- Plotted x is `raw_x * xscale + xoffset`, with the block's scale and
+  offset whichever column `raw_x` came from: a graph has one x axis.
 - A numeric y column is plotted as `raw_y * Scale + Offset`. Its
   `customdata` is the pair `[raw_x, raw_y]`, and its hover template shows
   `customdata[1]` in the set's y format, so the tooltip shows the recorded
@@ -302,8 +312,28 @@ For each graph set:
   union of the set's category names.
 - Axis titles are written as `{'text': ...}`. Plotly.js 4 renders a bare
   string title as nothing.
-- The legend is anchored inside the top-right corner of the plot area, so
-  every stacked graph has the same plot width and their x axes line up.
+- The legend sits inside the plot area, by default in its top-right
+  corner, so every stacked graph has the same plot width and their x
+  axes line up. Four settings shape it, each resolved on its own by
+  `resolveLegendSettings` at three levels: the header (`self.legend`,
+  starting from `LEGEND_DEFAULTS`), a sheet row before the first `Title`
+  for the tab, and a row after a graph's `Title` for that graph.
+  `LegendTransparency` sets `bgcolor`, white at alpha
+  `1 - LegendTransparency` (0 to 1, default 0.4: 0 solid white, 1 fully
+  see-through); `LegendOrientation` sets `orientation` (`v` or `h`, default
+  `v`); `LegendX` and `LegendY` set `x` and `y` (0 to 1, default 1).
+  `xanchor` and `yanchor` are `auto`, so the legend anchors on the side
+  nearest its position: at the default (1, 1) by its top-right corner.
+  Positions are kept within 0..1 because a legend outside the
+  plot makes Plotly widen that graph's margin, which would break the x
+  alignment. Each value is checked by `LEGEND_CHECKS`
+  (`legendTransparencyValue`, `legendOrientationValue`,
+  `legendPositionValue`); a refused value is reported and ignored.
+- On a `commonX` tab the x axis starts on the tab's data extent,
+  `range = [xmin, xmax]` with `autorange` off, also recorded in
+  `self.commonXExtent`. Plotly's autorange pads a trace drawn with
+  markers but not a lines-only one, so autorange would start the graphs
+  of the tab on different x ranges. Other tabs keep the autorange.
 - `hovermode` is `x`; `clickmode` is `event+select`.
 - In compact density the margins are cut to 60/20/8/38 px (l/r/t/b) and
   the title is drawn inside the plot area.
@@ -343,11 +373,13 @@ Each tab also gets the header's `PageTop`, the sheet's `GraphTop` and
 
 Everything built for a tab is wrapped in one `html.Div` of class
 `graph-tab`, which `makeGraphSet` returns as a one-element list. It
-carries two data attributes for `hardcopy.js`: `data-tab-name`, the sheet
-name after `graph-`, and `data-hardcopy-per-page`, the sheet's
+carries three data attributes: `data-tab-name`, the sheet name after
+`graph-`, and `data-hardcopy-per-page`, the sheet's
 `HardcopyGraphsPerPage` passed through `hardcopyPerPage` (the digits of a
-positive whole number, otherwise an empty string). The graph rows remain
-siblings inside the wrapper, so `graphsync.js` grouping is unaffected.
+positive whole number, otherwise an empty string), both for
+`hardcopy.js`; and `data-x-extent`, `"xmin,xmax"` on a `commonX` tab and
+empty otherwise, for `graphsync.js`. The graph rows remain siblings
+inside the wrapper, so `graphsync.js` grouping is unaffected.
 
 ### Export to disk
 
@@ -375,7 +407,7 @@ graphs exist in the browser at any time.
 
 | Callback | Inputs | Output | Behaviour |
 |---|---|---|---|
-| `apply_ranges` | Apply and Reset `n_clicks` of every graph in the graph's x group | the graph's `figure` | Returns a `Patch` that changes only the axis range, so the trace data is not resent. x applies across the whole `commonX` group; y only to the graph whose own boxes were used. Non-numeric or empty boxes, and start >= end, are ignored. |
+| `apply_ranges` | Apply and Reset `n_clicks` of every graph in the graph's x group | the graph's `figure` | Returns a `Patch` that changes only the axis range, so the trace data is not resent. x applies across the whole `commonX` group; y only to the graph whose own boxes were used. Non-numeric or empty boxes, and start >= end, are ignored. Reset sets x back to the tab's extent on a `commonX` tab (`self.commonXExtent`, bound as a default argument), and to autorange elsewhere. |
 | `show_ranges` | the graph's `relayoutData` | its four range inputs | Writes the current axis range back into the boxes after any mouse zoom, pan or autoscale; blank after an autorange. |
 | `display_click_data` | the graph's `clickData` | its Click Data box | Non-`commonX` graphs: previous and current `[x, y]` from `customdata`, and their difference. |
 | `display_common_click_data` | `clickData` of every graph in the group | its Click Data box | `commonX` graphs: x history and, for each trace, the nearest recorded sample at the clicked x. |
@@ -414,7 +446,7 @@ accepts a candidate only if both tests pass:
 
 The bind test runs first because it fails immediately, whereas on Windows
 a refused loopback connect waits for the full timeout; testing connect
-first made skipping a reserved range take minutes.
+first would make skipping a reserved range take minutes.
 
 `runPlotter` calls `freePort` immediately before starting the server
 thread, so the CLI and a program using the module get the same
@@ -465,7 +497,12 @@ whenever tab content is replaced.
 - Shared x range: a `plotly_relayout` that changes the x range (or
   autorange) on a graph inside a `.graph-row.common-x` row is applied with
   `Plotly.relayout` to every other graph in that tab's group. The y axes
-  are left alone.
+  are left alone. An autorange (Plotly's Autoscale) on a tab whose
+  wrapper carries `data-x-extent` is turned into that explicit range and
+  applied to every graph of the group, the one autoscaled included,
+  since Plotly's autorange pads marker traces and would leave the graphs
+  misaligned. Plotly's Reset axes and double-click return to the start
+  range, which is already the extent.
 - Echo suppression: driving a graph makes it emit the same event in turn.
   Each graph carries a counter, incremented before it is driven and
   decremented only when that drive has finished; `Plotly.relayout` is
@@ -538,10 +575,11 @@ one's state.
 
 Instance attributes on `DashLinePlot`, written by callbacks:
 `clickedData` and `clickedX` (click history), plus `graphTraces`,
-`graphXAxis` and `commonXGroups`, built during graph construction, and
-`port`, set by `runPlotter` when it starts the server. Click
-history is held by the server, not the browser, so every browser window
-open on the same server shares one click history per graph.
+`graphXAxis`, `commonXGroups`, `commonXExtent` and `boxedGraphs`, built
+during graph construction; `legend`, set by `loadConfig`; and
+`port`, set by `runPlotter` when it starts the server. Click history is
+held by the server, not the browser, so every browser window open on the
+same server shares one click history per graph.
 
 Threads: the Dash/Flask server runs in a daemon thread started by
 `runPlotter`; the main thread only waits, so Ctrl+C ends the process and
@@ -561,6 +599,8 @@ threads.
 | Unrecognised `Density` | Warning; `compact` used. |
 | Malformed cells, bad range-box input | Treated as blank; the default applies or the input is ignored. |
 | No free port at or above the requested one | `RuntimeError`. |
+| Hardcopy write with a bad file name, a non-PNG body, or another content type | HTTP 400, 400 or 415 from the `/_hardcopy` route; nothing written. |
+| Hardcopy failure in the browser (render, write, refused permission) | Message in the hardcopy box; Cancel and Escape still close it; nothing retried. |
 
 ## Supporting tools
 
@@ -575,6 +615,11 @@ is ignored.
 `.xlsx` configuration to the JSON schema `readConfigTables` reads. Empty
 cells are omitted rather than written as `null`, since the loader
 reinstates missing columns as NaN.
+
+`tools/make_multisource_demo_data.py` regenerates
+`data/multisource-a.json`, `data/multisource-b.json` and
+`data/multisource-c.csv`, the dummy data behind
+`multisource-example.json`.
 
 `tools/make_hardcopy_demo_data.py` regenerates `data/hardcopy-demo.csv`,
 the dummy data behind `hardcopy-example.json`.
@@ -592,9 +637,12 @@ node --test tests/hardcopy.test.js
 |---|---|
 | `tests/conftest.py` | Loads `dash-lineplot.py` by path and builds a page from a configuration; `walk` and `props` helpers for the Dash component tree. |
 | `tests/test_demo.py` | `hardcopy-example.json` builds three tabs of 10, 6 and 3 graphs. |
-| `tests/test_layout.py` | `hardcopyPerPage`, the `graph-tab` wrapper, the 200 pixel box threshold, full-width rows. |
+| `tests/test_layout.py` | `hardcopyPerPage`, the `graph-tab` wrapper, the 200 pixel box threshold, full-width rows, the spacer column on a mixed `commonX` tab, a blank `PageBottom` (JSON `null` and blank workbook cell). |
 | `tests/test_callbacks.py` | Callback registration read back from `dashApp.callback_map`: none for unboxed graphs, boxed-only x groups on a mixed `commonX` tab, full wiring on `commonx-example.json`. |
 | `tests/test_hardcopy_routes.py` | The `/_hardcopy` routes through Flask's test client: folder path, write then exists, refused names, non-PNG bodies and wrong content type. |
+| `tests/test_multisource.py` | The per-row `xValue` override: each trace's x from its own file's column, a blank cell falling back to the block, a missing column reported; `multisource-example.json` builds with three traces per graph on their own grids. |
+| `tests/test_commonx_range.py` | A `commonX` tab's graphs start on the tab's extent and its wrapper carries `data-x-extent`; other tabs keep the autorange; Reset, driven through Dash's `/_dash-update-component` endpoint, restores the extent on a `commonX` tab and autoranges elsewhere. |
+| `tests/test_legend.py` | The value checkers; `LegendTransparency` 0 drawing solid white and 1 fully see-through; today's defaults (transparency 0.4, `v`, top-right, `auto` anchors); header, tab and graph levels, each setting resolved on its own; bad values reported and ignored; the levels in `commonx-example.json` and `multisource-example.json`; every example's page transparency. |
 | `tests/hardcopy.test.js` | The pure functions of `assets/hardcopy.js`. |
 | `tests/test_pngcheck.py`, `tests/pngcheck.py` | A checker for written pages (size, `pHYs`, CRCs), usable as a script: `python tests/pngcheck.py page.png`. |
 
@@ -612,9 +660,13 @@ that depend on those versions:
   `.values[0]` or `.iloc[0]` on filtered frames.
 - Plotly.js 4 needs axis titles as `{'text': ...}`.
 
+Flask is imported directly (`request`, `jsonify`) for the hardcopy routes;
+it is Dash's own server and comes with Dash, so it adds no dependency.
+The JavaScript tests need node (v24 used), which is not part of
+`environment.yml`.
+
 `resourcePath` resolves `assets/` and `icons/` relative to the script, or
-to PyInstaller's `_MEIPASS` when frozen; no packaged build is currently
-maintained.
+to PyInstaller's `_MEIPASS` when frozen; no packaged build is provided.
 
 ## Known design limitations
 
@@ -633,6 +685,13 @@ in `suggestedwork.md`.
   rather than matching it exactly, and every other extension is read as
   delimited text.
 - `freePort` cannot reserve the port it returns; see Port selection.
+- The hardcopy's Choose folder needs a Chromium browser on a secure
+  origin, and no browser lets a page open its folder dialog at a given
+  path; Save, through the server, always writes into the directory the
+  server was started in.
+- A graph's x scale, offset, label and format are per block, so the
+  traces of one graph must share an x unit even when they come from files
+  with different x columns.
 
 ## Code map
 
@@ -642,32 +701,33 @@ Line ranges in `dash-lineplot.py` as of 2026-10-08.
 |---|---|
 | imports, Dash import guard | 69-104 |
 | `resourcePath` | 113-122 |
-| `CONFIG_COLUMNS`, `BOXES_MIN_HEIGHT`, `HARDCOPY_NAME`, `PNG_SIGNATURE` | 134-148 |
-| `splitDataRef` | 151-169 |
-| `readJsonData` | 172-222 |
-| `traceYExtent` | 225-249 |
-| `cellFloat`, `cellText`, `cellFlag` | 252-285 |
-| `hardcopyPerPage` | 288-299 |
-| `hasBoxColumn` | 302-311 |
-| `resolveSetContexts` | 314-376 |
-| `selectionBounds` | 379-418 |
-| `nearestSample` | 421-440 |
-| `isEnumSeries`, `parseCategories`, `enumCategories` | 443-512 |
-| `isJsonConfig`, `readConfigTables` | 515-575 |
-| `readPageTitle` | 578-597 |
-| `freePort` | 600-634 |
-| `DashLinePlot.__init__` | 639-671 |
-| `commonClickMessage`, `commonSelectMessage` | 674-795 |
-| `generateFeedbackBoxes` | 798-889 |
-| `graphToDisk` | 892-908 |
-| `makeGraphSet` | 912-1374 |
-| `prepareGraphs` | 1377-1422 |
-| `makePage` | 1425-1502 |
-| `loadConfig` | 1505-1582 |
-| `readdatafile` | 1585-1638 |
-| `loadData` | 1641-1709 |
-| `runDash` | 1713-1759 |
-| `setupHardcopyRoutes` | 1761-1810 |
-| `setupCallbacks` | 1812-2102 |
-| `runPlotter` | 2105-2166 |
-| CLI entry point | 2171-end |
+| `CONFIG_COLUMNS`, `BOXES_MIN_HEIGHT`, `LEGEND_DEFAULTS`, `HARDCOPY_NAME`, `PNG_SIGNATURE` | 134-155 |
+| `splitDataRef` | 158-176 |
+| `readJsonData` | 179-229 |
+| `traceYExtent` | 232-256 |
+| `cellFloat`, `cellText`, `cellFlag` | 259-292 |
+| `hardcopyPerPage` | 295-306 |
+| `hasBoxColumn` | 309-318 |
+| `legendTransparencyValue`, `legendOrientationValue`, `legendPositionValue`, `LEGEND_CHECKS`, `resolveLegendSettings` | 321-402 |
+| `resolveSetContexts` | 405-467 |
+| `selectionBounds` | 470-509 |
+| `nearestSample` | 512-531 |
+| `isEnumSeries`, `parseCategories`, `enumCategories` | 534-603 |
+| `isJsonConfig`, `readConfigTables` | 606-666 |
+| `readPageTitle` | 669-688 |
+| `freePort` | 691-725 |
+| `DashLinePlot.__init__` | 730-769 |
+| `commonClickMessage`, `commonSelectMessage` | 772-893 |
+| `generateFeedbackBoxes` | 896-987 |
+| `graphToDisk` | 990-1006 |
+| `makeGraphSet` | 1010-1504 |
+| `prepareGraphs` | 1507-1552 |
+| `makePage` | 1555-1632 |
+| `loadConfig` | 1635-1726 |
+| `readdatafile` | 1729-1782 |
+| `loadData` | 1785-1853 |
+| `runDash` | 1857-1903 |
+| `setupHardcopyRoutes` | 1905-1954 |
+| `setupCallbacks` | 1956-2253 |
+| `runPlotter` | 2256-2317 |
+| CLI entry point | 2322-end |

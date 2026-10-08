@@ -173,3 +173,36 @@ for this purpose  we must change the app as follows:
 Ask questions if anything is unclear or if you have suggestions.
 
 Report on the feasibility and implementation details of the hardcopy generation feature. Provide a spec and plan before implementation.
+
+
+---
+
+
+---
+
+Can I write  a json config file to draw data from more than one data source?
+
+I want to create a summary tab/page as follows:
+
+Graph 1:
+- Data source: `datafile1.json`
+- X-axis: `t`
+- Y-axis: `value1`
+- Data source: `datafile2json`
+- X-axis: `t`
+- Y-axis: `value1`
+
+
+Graph 2:
+- Data source: `datafile1.json`
+- X-axis: `t`
+- Y-axis: `value2`
+- Data source: `datafile2.json`
+- X-axis: `t`
+- Y-axis: `value2`
+
+all the plots on one graph are of the same variable from different data sources, e.g., 'x' from all the files plotted against 't', where both 'x' and 't' are drawn from different files, potentially not all on the same 't' grid.
+The graph will have a single t-axis-label and a single y-axis-label.
+
+If not, would it be possible to change the code to do this?
+

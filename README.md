@@ -38,10 +38,23 @@ the bundled `data/` folder.
 
 `commonx-example.json` demonstrates `commonX`, which ties every graph on a
 tab to one x scale. Its first tab is linked and its second holds the same
-three graphs unlinked, for comparison:
+three graphs unlinked, for comparison. It also shows the three levels of
+`LegendTransparency`, how see-through the legend background is (0 solid
+white, 1 fully see-through): 0.7 for the page (as in every example), 0.4
+for the second tab, and 0 for one graph on it:
 
 ```bash
 python dash-lineplot.py --configfile commonx-example.json
+```
+
+`multisource-example.json` plots the same quantities from three data files
+on one graph, each file with its own time column name (`t`, `time`,
+`CurrentSimTime`) and its own sample grid. It also shows the legend layout
+settings, `LegendOrientation`, `LegendX` and `LegendY`, at page, tab and
+graph level:
+
+```bash
+python dash-lineplot.py --configfile multisource-example.json
 ```
 
 ## What it does

@@ -4,7 +4,8 @@
     "PageTop": "# commonX",
     "PageBottom": "",
     "Datafile": "none",
-    "Density": "compact"
+    "Density": "compact",
+    "LegendTransparency": 0.7
   },
   "sheets": {
     "graph-linked": [
@@ -120,6 +121,10 @@
         "Value": "### Independent axes\n\nThe same three graphs without commonX. Zooming one leaves the others alone, and a click fills only that graph's box."
       },
       {
+        "Variable": "LegendTransparency",
+        "Value": 0.4
+      },
+      {
         "Variable": "Title",
         "Value": "Relative distance"
       },
@@ -137,6 +142,10 @@
       {
         "Variable": "Title",
         "Value": "Relative speed"
+      },
+      {
+        "Variable": "LegendTransparency",
+        "Value": 0.0
       },
       {
         "Variable": "yLabel",

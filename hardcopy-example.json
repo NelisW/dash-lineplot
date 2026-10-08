@@ -4,7 +4,8 @@
     "PageTop": "# Hardcopy demonstration\n\nPress Ctrl+Alt+H (Chrome or Edge) to write the graphs of the current tab to A4, 300 dpi PNG pages.",
     "PageBottom": "",
     "Datafile": "none",
-    "Density": "compact"
+    "Density": "compact",
+    "LegendTransparency": 0.7
   },
   "sheets": {
     "graph-many": [

@@ -1,0 +1,128 @@
+{
+  "header": {
+    "Pagetitle": "Multi-source demonstration",
+    "PageTop": "# Several data sources on one graph\n\nEach graph plots the same quantity from three files. The files name their time column differently (`t`, `time`, `CurrentSimTime`) and sample on different grids; each line is drawn from its own file at its own samples, nothing resampled.",
+    "PageBottom": "",
+    "Datafile": "none",
+    "Density": "compact",
+    "LegendTransparency": 0.7,
+    "LegendOrientation": "h",
+    "LegendX": 0,
+    "LegendY": 0
+  },
+  "sheets": {
+    "graph-summary": [
+      {
+        "Variable": "Height",
+        "Value": 300
+      },
+      {
+        "Variable": "xLabel",
+        "Value": "Time [s]",
+        "Format": ".3f"
+      },
+      {
+        "Variable": "xValue",
+        "Value": "t"
+      },
+      {
+        "Variable": "commonX",
+        "Value": true
+      },
+      {
+        "Variable": "GraphTop",
+        "Value": "### Summary\n\nThe sheet's `xValue` is `t`, which source A uses. The source B and C rows name their own time column in their `xValue` cell, beside the `Datafile` cell that names their file."
+      },
+      {
+        "Variable": "LegendX",
+        "Value": 0.5
+      },
+      {
+        "Variable": "Title",
+        "Value": "value1 from three sources"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "value1 [-]",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "value1",
+        "Datafile": "data/multisource-a.json",
+        "LineLabel": "A: t, 0.1 s",
+        "Mode": "markers+lines",
+        "MarkerOpacity": 0
+      },
+      {
+        "Variable": "yValue",
+        "Value": "value1",
+        "Datafile": "data/multisource-b.json",
+        "xValue": "time",
+        "LineLabel": "B: time, 0.25 s",
+        "Mode": "markers+lines",
+        "MarkerOpacity": 0
+      },
+      {
+        "Variable": "yValue",
+        "Value": "value1",
+        "Datafile": "data/multisource-c.csv",
+        "xValue": "CurrentSimTime",
+        "LineLabel": "C: CurrentSimTime, 0.5 s",
+        "Mode": "markers+lines",
+        "MarkerOpacity": 0
+      },
+      {
+        "Variable": "Title",
+        "Value": "value2 from three sources"
+      },
+      {
+        "Variable": "LegendOrientation",
+        "Value": "v"
+      },
+      {
+        "Variable": "LegendX",
+        "Value": 1
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "value2 [-]",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "value2",
+        "Datafile": "data/multisource-a.json",
+        "LineLabel": "A: t, 0.1 s",
+        "Mode": "markers+lines",
+        "MarkerOpacity": 0
+      },
+      {
+        "Variable": "yValue",
+        "Value": "value2",
+        "Datafile": "data/multisource-b.json",
+        "xValue": "time",
+        "LineLabel": "B: time, 0.25 s",
+        "Mode": "markers+lines",
+        "MarkerOpacity": 0
+      },
+      {
+        "Variable": "yValue",
+        "Value": "value2",
+        "Datafile": "data/multisource-c.csv",
+        "xValue": "CurrentSimTime",
+        "LineLabel": "C: CurrentSimTime, 0.5 s",
+        "Mode": "markers+lines",
+        "MarkerOpacity": 0
+      },
+      {
+        "Variable": "Include",
+        "Value": true
+      },
+      {
+        "Variable": "ToDisk",
+        "Value": false
+      }
+    ]
+  }
+}
