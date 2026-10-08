@@ -122,7 +122,7 @@ configuration. Several processes may run at once, each on its own port
 | Readout helpers | `commonClickMessage`, `commonSelectMessage`, `selectionBounds`, `nearestSample`, `traceYExtent` | Format click and selection readouts from true values. |
 | Port selection | `freePort` | Find a verified free port at or above the requested one. |
 | Browser-side sync | `assets/graphsync.js` | Page-wide hover sync; shared x range across a `commonX` tab. |
-| Hardcopy | `assets/hardcopy.js` | Ctrl+Alt+H: render the visible tab's graphs to A4, 300 dpi PNG pages and write them to a folder the reader chooses. |
+| Hardcopy | `assets/hardcopy.js`, `DashLinePlot.setupHardcopyRoutes` | Ctrl+Alt+H: render the visible tab's graphs to A4, 300 dpi PNG pages and write them into the server's working directory, or a folder the reader chooses. |
 | Styling | `assets/bWLwgP.css`, `assets/density.css` | Base grid and typography; compact/comfortable spacing. |
 | Config generator | `tools/config_from_run.py` | Write a first-pass JSON configuration for a directory of JSON telemetry. |
 | Config converter | `tools/xlsx_config_to_json.py` | Convert an `.xlsx` configuration to the equivalent JSON. |
@@ -425,6 +425,32 @@ started and no port is chosen. Two processes started at the same instant
 can still pick the same port, because the port is released between the
 test and the server's own bind.
 
+### Hardcopy routes
+
+`runDash` calls `setupHardcopyRoutes(dashApp.server, Path.cwd())`, which
+adds three Flask routes to the server under Dash, for the hardcopy's
+Save button:
+
+| Route | Response |
+|---|---|
+| `GET /_hardcopy/folder` | `{"path": ...}`, the directory pages are written into. |
+| `HEAD /_hardcopy/files/<name>` | 200 if that file exists there, 404 if not. |
+| `PUT /_hardcopy/files/<name>` | Writes the body as that file; 204. |
+
+A name must match `HARDCOPY_NAME`: one file name, none of
+`<>:"/\|?*` or control characters, ending in `.png` (the route's own
+converter already excludes `/`). Anything else is 400, so nothing can be
+written outside the directory. The body must start with the PNG
+signature (else 400) and arrive as `image/png` (else 415).
+
+Requiring a `PUT` of `image/png` is what keeps other web sites out. A
+page from another origin can send that request only after a CORS
+preflight, and the server never answers one with an
+`Access-Control-Allow-Origin` header, so the browser does not send the
+`PUT` at all. The requests a foreign page can send without a preflight,
+such as a `POST` of `text/plain`, are refused with 405. The server binds
+to 127.0.0.1 only.
+
 ## Browser-side behaviour
 
 `assets/graphsync.js` is served automatically from the Dash assets folder
@@ -453,14 +479,20 @@ whenever tab content is replaced.
   press while its box is open is ignored.
 - Tab and graphs: the first `.graph-tab` with a non-null `offsetParent`,
   and its `.js-plotly-plot` elements in document order.
-- Name and folder: an in-page box takes the file name (default
+- Name and destination: an in-page box takes the file name (default
   `data-tab-name`; `cleanName` drops a trailing `.png` and refuses
-  `<>:"/\|?*`), then `showDirectoryPicker` is called straight from the
-  Save or Enter handler, which keeps the user activation it requires. A
-  folder picker, not `showSaveFilePicker`, because a Save-As handle
-  grants only the one file it names and cannot write further pages. Both
-  exist only in Chromium browsers on a secure origin; elsewhere the box
-  shows a message instead.
+  `<>:"/\|?*`). Save or Enter writes into the server's working
+  directory, through `serverFolder`, an object with the part of the
+  folder-handle interface the writer uses, backed by the `/_hardcopy`
+  routes (see Hardcopy routes below); the box shows the directory, read
+  from `/_hardcopy/folder`. Choose folder calls `showDirectoryPicker`
+  straight from the click handler, which keeps the user activation it
+  requires, with an `id` so the browser reopens the last folder. A folder
+  picker, not `showSaveFilePicker`, because a Save-As handle grants only
+  the one file it names and cannot write further pages. It exists only in
+  Chromium browsers on a secure origin; elsewhere the button is disabled.
+  `startIn` accepts only a handle or a fixed well-known folder, not a
+  path, which is why the working directory is reached through the server.
 - Layout: sizes are in CSS pixels (96 per inch). The printable area is A4
   less 10 mm margins, 718 x 1047 CSS px. `layoutPages` divides each page
   into `data-hardcopy-per-page` equal slots, or, when that is empty,
@@ -485,8 +517,9 @@ whenever tab content is replaced.
   focus on the page body, outside the box's key handler).
 
 The pure functions (`cleanName`, `pageFileNames`, `layoutPages`, `crc32`,
-`setPngDpi`, `findLeftovers`, `mmToCss`, `mmToPx`) are exported under node, for
-`tests/hardcopy.test.js`, by a guard ahead of the browser wiring.
+`setPngDpi`, `findLeftovers`, `serverFolder`, `mmToCss`, `mmToPx`) are
+exported under node, for `tests/hardcopy.test.js`, by a guard ahead of
+the browser wiring.
 
 `density.css` tightens the vertical spacing of the base stylesheet and
 lays out the graph row and readout column; the density class on the page
@@ -561,6 +594,7 @@ node --test tests/hardcopy.test.js
 | `tests/test_demo.py` | `hardcopy-example.json` builds three tabs of 10, 6 and 3 graphs. |
 | `tests/test_layout.py` | `hardcopyPerPage`, the `graph-tab` wrapper, the 200 pixel box threshold, full-width rows. |
 | `tests/test_callbacks.py` | Callback registration read back from `dashApp.callback_map`: none for unboxed graphs, boxed-only x groups on a mixed `commonX` tab, full wiring on `commonx-example.json`. |
+| `tests/test_hardcopy_routes.py` | The `/_hardcopy` routes through Flask's test client: folder path, write then exists, refused names, non-PNG bodies and wrong content type. |
 | `tests/hardcopy.test.js` | The pure functions of `assets/hardcopy.js`. |
 | `tests/test_pngcheck.py`, `tests/pngcheck.py` | A checker for written pages (size, `pHYs`, CRCs), usable as a script: `python tests/pngcheck.py page.png`. |
 
@@ -606,33 +640,34 @@ Line ranges in `dash-lineplot.py` as of 2026-10-08.
 
 | Function or block | Lines |
 |---|---|
-| imports, Dash import guard | 69-103 |
-| `resourcePath` | 112-121 |
-| `CONFIG_COLUMNS`, `BOXES_MIN_HEIGHT` | 133-141 |
-| `splitDataRef` | 144-162 |
-| `readJsonData` | 165-215 |
-| `traceYExtent` | 218-242 |
-| `cellFloat`, `cellText`, `cellFlag` | 245-278 |
-| `hardcopyPerPage` | 281-292 |
-| `hasBoxColumn` | 295-304 |
-| `resolveSetContexts` | 307-369 |
-| `selectionBounds` | 372-411 |
-| `nearestSample` | 414-433 |
-| `isEnumSeries`, `parseCategories`, `enumCategories` | 436-505 |
-| `isJsonConfig`, `readConfigTables` | 508-568 |
-| `readPageTitle` | 571-590 |
-| `freePort` | 593-627 |
-| `DashLinePlot.__init__` | 632-664 |
-| `commonClickMessage`, `commonSelectMessage` | 667-788 |
-| `generateFeedbackBoxes` | 791-882 |
-| `graphToDisk` | 885-901 |
-| `makeGraphSet` | 905-1367 |
-| `prepareGraphs` | 1370-1415 |
-| `makePage` | 1418-1495 |
-| `loadConfig` | 1498-1575 |
-| `readdatafile` | 1578-1631 |
-| `loadData` | 1634-1702 |
-| `runDash` | 1706-1749 |
-| `setupCallbacks` | 1751-2041 |
-| `runPlotter` | 2044-2105 |
-| CLI entry point | 2110-end |
+| imports, Dash import guard | 69-104 |
+| `resourcePath` | 113-122 |
+| `CONFIG_COLUMNS`, `BOXES_MIN_HEIGHT`, `HARDCOPY_NAME`, `PNG_SIGNATURE` | 134-148 |
+| `splitDataRef` | 151-169 |
+| `readJsonData` | 172-222 |
+| `traceYExtent` | 225-249 |
+| `cellFloat`, `cellText`, `cellFlag` | 252-285 |
+| `hardcopyPerPage` | 288-299 |
+| `hasBoxColumn` | 302-311 |
+| `resolveSetContexts` | 314-376 |
+| `selectionBounds` | 379-418 |
+| `nearestSample` | 421-440 |
+| `isEnumSeries`, `parseCategories`, `enumCategories` | 443-512 |
+| `isJsonConfig`, `readConfigTables` | 515-575 |
+| `readPageTitle` | 578-597 |
+| `freePort` | 600-634 |
+| `DashLinePlot.__init__` | 639-671 |
+| `commonClickMessage`, `commonSelectMessage` | 674-795 |
+| `generateFeedbackBoxes` | 798-889 |
+| `graphToDisk` | 892-908 |
+| `makeGraphSet` | 912-1374 |
+| `prepareGraphs` | 1377-1422 |
+| `makePage` | 1425-1502 |
+| `loadConfig` | 1505-1582 |
+| `readdatafile` | 1585-1638 |
+| `loadData` | 1641-1709 |
+| `runDash` | 1713-1759 |
+| `setupHardcopyRoutes` | 1761-1810 |
+| `setupCallbacks` | 1812-2102 |
+| `runPlotter` | 2105-2166 |
+| CLI entry point | 2171-end |

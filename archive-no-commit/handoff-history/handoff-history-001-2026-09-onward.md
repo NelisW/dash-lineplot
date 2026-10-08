@@ -496,3 +496,23 @@ asked for the folder dialog to open in the working directory: not
 possible with the File System Access API (`startIn` takes only a handle
 or one of desktop/documents/downloads/music/pictures/videos, per MDN),
 so alternatives were put to the user.
+
+Second follow-up, same session (after the user's commit `8d89405`):
+the user chose "save straight into the working directory, folder dialog
+optional". `setupHardcopyRoutes` adds `GET /_hardcopy/folder`,
+`HEAD|GET /_hardcopy/files/<name>` and `PUT /_hardcopy/files/<name>` to
+the Flask server (names checked by `HARDCOPY_NAME`, PNG signature,
+`image/png` only); `serverFolder` in `hardcopy.js` presents them as a
+folder handle, so the writer is unchanged. The box gained a target line
+and a Choose folder button (disabled where the dialog does not exist).
+Tests: `tests/test_hardcopy_routes.py` (4) and a `serverFolder` node test
+-> 15 pytest, 8 node. Browser checks with the server started from an
+empty scratch directory: Save wrote `many-p1..3.png` there (pngcheck
+good), overwrite prompt, leftovers note, Choose folder via a stand-in,
+and Save with no folder dialog available all behaved; from
+`http://localhost:8120` a cross-origin `PUT` never left the browser
+(only its OPTIONS preflight reached the server) and a `POST` got 405.
+Spec R3 amended, userguide, SDD (Hardcopy routes subsection, regenerated
+code map), README, `suggestedwork.md` citations (remapped from
+`ef0bdf0`, verified) updated. Noticed: the user had staged the deletion
+of `dash-3dof.xlsx`; left alone.

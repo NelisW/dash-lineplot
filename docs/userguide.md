@@ -793,8 +793,11 @@ including the current zoom.
 1. Press Ctrl+Alt+H. A small box opens with a file name, filled in with the
    tab name. Change it if wanted; a trailing `.png` is ignored, and a name
    containing any of `< > : " / \ | ? *` is refused.
-1. Press Enter or Save. The system folder dialog opens; choose the folder
-   the pages go into. The browser may also ask whether the page may save
+1. Press Enter or Save. The pages are written into the directory
+   `dash-lineplot.py` was started from; the box shows which one. No
+   dialog opens. To save somewhere else instead, press **Choose
+   folder...**: the system folder dialog opens, reopening in the folder
+   used last time, and the browser may also ask whether the page may save
    files there.
 1. The pages are written as `name.png` for a single page, or
    `name-p1.png`, `name-p2.png`, and so on. If any of those files already
@@ -822,12 +825,19 @@ rules:
 
 Text and lines print at the same physical size as on screen.
 
-The hardcopy needs Chrome or Edge, with the page opened at a localhost
-address (`http://127.0.0.1:...` or `http://localhost:...`), because it
-writes the files through the browser's file-system access, which other
-browsers do not provide. Elsewhere the keystroke shows a message and does
-nothing else. The Plotly toolbar's own "Download plot as a PNG" still
-saves a single graph in any browser.
+Save works in any browser: the page hands the finished pages to the
+`dash-lineplot` server, which writes them. The server accepts only PNG
+files with a plain file name, writes nowhere but that one directory, and
+accepts them only from its own page, never from another web site.
+
+**Choose folder...** needs Chrome or Edge, with the page opened at a
+localhost address (`http://127.0.0.1:...` or `http://localhost:...`),
+because it uses the browser's own file-system access, which other
+browsers do not provide; elsewhere the button is greyed out. The folder
+dialog cannot be made to open in the working directory: a browser lets a
+page start it only in a folder used before or in one of a few fixed
+places such as Documents, which is why Save goes through the server
+instead.
 
 `hardcopy-example.json` demonstrates all of this on dummy data from
 `data/hardcopy-demo.csv`:

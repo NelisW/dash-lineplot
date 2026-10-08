@@ -49,7 +49,7 @@ commit `ef0bdf0`.
 |---|---|
 | R1 | A graph whose block `Height` is 200 or less is drawn without the column of text-entry and readout boxes beside it; the graph takes the full row width, except on a `commonX` tab that also has boxed graphs, where an empty column keeps its x axis aligned with theirs (amended 2026-10-08 after review). |
 | R2 | A keystroke starts hardcopy generation for the tab currently on screen, and only that tab. |
-| R3 | The user names the output file; the output location is chosen in a native file-system dialog. |
+| R3 | The user names the output file. By default the pages are saved into the directory the server was started in, with no dialog; a native folder dialog remains available to save elsewhere (amended 2026-10-08: the dialog cannot be opened at a given path, see "Saving into the working directory"). |
 | R4 | The hardcopy shows graphs only: no tab strip, no page or graph markdown, no readouts, no logo. |
 | R5 | Output is PNG, 300 dpi, A4 portrait. |
 | R6 | A tab with more graphs than fit on one page produces several pages. |
@@ -232,6 +232,33 @@ existing `pHYs` chunk, if the encoder ever writes one, is replaced.
 and `close`. Existence is tested beforehand with
 `getFileHandle(name, {create: false})`, which raises `NotFoundError` for
 a missing file.
+
+### Saving into the working directory (R3, amended)
+
+`showDirectoryPicker`'s `startIn` option accepts only a file-system
+handle or one of the well-known folders `desktop`, `documents`,
+`downloads`, `music`, `pictures` and `videos`; a page cannot open the
+dialog at an arbitrary path such as the server's working directory. The
+default destination is therefore reached through the server:
+
+- `DashLinePlot.setupHardcopyRoutes(server, folder)`, called from
+  `runDash` with `Path.cwd()`, adds `GET /_hardcopy/folder` (the
+  directory), `HEAD /_hardcopy/files/<name>` (200 or 404) and
+  `PUT /_hardcopy/files/<name>` (write, 204) to the Flask server.
+- A name must be one file name ending in `.png` with none of
+  `<>:"/\|?*` or control characters (400 otherwise); the body must start
+  with the PNG signature (400) and arrive as `image/png` (415).
+- Only the server's own page can write: a cross-origin `PUT` of
+  `image/png` needs a CORS preflight the server never grants, and the
+  requests that need none are refused (405). The server binds to
+  127.0.0.1.
+- In `assets/hardcopy.js`, `serverFolder(path, fetch)` presents the
+  routes as the subset of the folder-handle interface the writer uses, so
+  existence checks, the overwrite prompt, leftovers and writing are the
+  same code for both destinations.
+- The box shows where Save writes. Save and Enter use the server; Choose
+  folder opens the dialog (Chromium only, disabled elsewhere, with the
+  explanation as its tooltip). Save works in any browser.
 
 ## Demonstration (R8)
 

@@ -99,6 +99,7 @@ from dash import dcc
 from dash import html
 from dash import Patch
 from dash.dependencies import Input, Output, State
+from flask import request, jsonify
 
 import plotly.offline as offline
 
@@ -139,6 +140,12 @@ CONFIG_COLUMNS = ['Variable', 'Value', 'Format', 'LineLabel', 'GraphType',
 # boxes are taller than the plot, and a page of small graphs is usually
 # wanted for a compact overview or a hardcopy rather than for measurement.
 BOXES_MIN_HEIGHT = 200
+
+# A hardcopy page the server may write: one file name, no directory part,
+# none of the characters Windows refuses, ending in .png. The browser
+# applies the same rule before it sends anything (assets/hardcopy.js).
+HARDCOPY_NAME = re.compile(r'[^<>:"/\\|?*\x00-\x1f]+\.png')
+PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
 
 ################################################################
 def splitDataRef(dataref):
@@ -1740,6 +1747,9 @@ class DashLinePlot:
         # generate all callback functions for all possible graph sets & tabs
         self.setupCallbacks()
 
+        # hardcopy pages are saved into the directory the server was started in
+        self.setupHardcopyRoutes(dashApp.server, Path.cwd())
+
         # run the server on the specified port
         # set debug mode to False, no hot reloading
         # From https://dash.plot.ly/devtools
@@ -1747,6 +1757,57 @@ class DashLinePlot:
         # By default, Dash includes "hot-reloading". This means that Dash will automatically refresh your browser 
         # when you make a change in your Python or CSS code.
         dashApp.run(debug=False, port=port, use_reloader=False)
+
+    def setupHardcopyRoutes(self, server, folder):
+        """
+        Let the browser save hardcopy pages into one directory on this machine
+
+        assets/hardcopy.js saves there by default, so the reader needs no
+        folder dialog; its Choose folder button still offers one. Three
+        routes on the Flask server under Dash:
+
+            GET  /_hardcopy/folder        the directory, as {'path': ...}
+            HEAD /_hardcopy/files/<name>  200 if that file exists, else 404
+            PUT  /_hardcopy/files/<name>  write the body as that file
+
+        Nothing can be written outside the directory: a name is one file
+        name ending in .png (HARDCOPY_NAME), and the body must be a PNG.
+        The write must be a PUT of image/png. A web page from another site
+        cannot send that without the browser first asking this server for
+        permission, which it never grants, so only the page this server
+        serves can save. The server listens on 127.0.0.1 only.
+
+        Args:
+            | server (flask.Flask): the server behind the Dash app.
+            | folder (Path): directory the pages are written into.
+
+        Returns:
+            | None.
+
+        """
+        folder = Path(folder)
+
+        def hardcopyFolder():
+            return jsonify({'path': str(folder)})
+
+        def hardcopyFile(name):
+            if not HARDCOPY_NAME.fullmatch(name):
+                return 'not a hardcopy page name', 400
+            target = folder / name
+            if request.method != 'PUT':
+                return ('', 200) if target.is_file() else ('', 404)
+            if request.mimetype != 'image/png':
+                return 'expected image/png', 415
+            body = request.get_data()
+            if not body.startswith(PNG_SIGNATURE):
+                return 'not a PNG', 400
+            target.write_bytes(body)
+            return '', 204
+
+        server.add_url_rule('/_hardcopy/folder', 'hardcopyFolder',
+                            hardcopyFolder, methods=['GET'])
+        server.add_url_rule('/_hardcopy/files/<name>', 'hardcopyFile',
+                            hardcopyFile, methods=['GET', 'PUT'])
 
     def setupCallbacks(self):
         """

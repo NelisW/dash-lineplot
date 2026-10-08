@@ -55,6 +55,39 @@ test('findLeftovers reports pages of an earlier, longer run', async () => {
     assert.deepStrictEqual(await hc.findLeftovers(folder([]), 't', 3), []);
 });
 
+test('serverFolder stands in for a folder handle over the server routes', async () => {
+    const calls = [];
+    const present = new Set(['old.png']);
+    const fakeFetch = async (url, init = {}) => {
+        calls.push([init.method || 'GET', url, init.headers, init.body]);
+        const name = decodeURIComponent(url.split('/').pop());
+        if (init.method === 'HEAD') {
+            return { ok: present.has(name), status: present.has(name) ? 200 : 404 };
+        }
+        if (name === 'refused.png') {
+            return { ok: false, status: 400, text: async () => 'not a hardcopy page name' };
+        }
+        return { ok: true, status: 204 };
+    };
+    const folder = hc.serverFolder('C:\\work', fakeFetch);
+    assert.strictEqual(folder.name, 'C:\\work');
+
+    await folder.getFileHandle('old.png', { create: false });
+    await assert.rejects(folder.getFileHandle('new.png', { create: false }),
+                         (err) => err.name === 'NotFoundError');
+
+    const page = new Uint8Array([137, 80, 78, 71]);
+    const writable = await (await folder.getFileHandle('a b.png', { create: true })).createWritable();
+    await writable.write(page);
+    await writable.close();
+    assert.deepStrictEqual(calls.at(-1),
+        ['PUT', '/_hardcopy/files/a%20b.png', { 'Content-Type': 'image/png' }, page]);
+
+    const refused = await (await folder.getFileHandle('refused.png', { create: true })).createWritable();
+    await refused.write(page);
+    await assert.rejects(refused.close(), /not a hardcopy page name/);
+});
+
 test('crc32 check value', () => {
     assert.strictEqual(hc.crc32(new TextEncoder().encode('123456789')), 0xCBF43926);
 });

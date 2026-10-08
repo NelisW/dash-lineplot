@@ -15,14 +15,20 @@
  *   data-tab-name            default file name
  *   data-hardcopy-per-page   HardcopyGraphsPerPage, or '' when not set
  *
- * Why a folder dialog and not a Save-As dialog: showSaveFilePicker grants
- * write access to the one file named in it and to nothing beside it, so it
- * cannot write the second and later pages of a multi-page tab.
- * showDirectoryPicker grants a folder, into which every page can be written
- * after one dialog. The file name is therefore typed into a small box on
- * the page, and the folder chosen in the native dialog. Both pickers exist
- * only in Chromium browsers (Chrome, Edge), and only on a secure origin,
- * which http://localhost and http://127.0.0.1 are.
+ * The file name is typed into a small box on the page. Save (or Enter)
+ * writes the pages into the directory the server was started in, through
+ * the /_hardcopy routes the server provides (setupHardcopyRoutes in
+ * dash-lineplot.py); that works in any browser. A browser cannot open its
+ * folder dialog at a given path -- startIn takes only a handle or one of
+ * a few fixed folders -- which is why the working directory is reached
+ * through the server rather than through the dialog.
+ *
+ * Choose folder opens the browser's folder dialog instead. A folder, not a
+ * Save-As dialog: showSaveFilePicker grants write access to the one file
+ * named in it and to nothing beside it, so it cannot write the second and
+ * later pages of a multi-page tab. showDirectoryPicker exists only in
+ * Chromium browsers (Chrome, Edge), and only on a secure origin, which
+ * http://localhost and http://127.0.0.1 are.
  *
  * Sizes are worked in CSS pixels, 96 to the inch, and multiplied by
  * 300 / 96 only when a graph is rendered, so text and lines come out at the
@@ -191,19 +197,65 @@
         return leftovers;
     }
 
+    // The directory the server was started in, presented with the part of
+    // the folder-handle interface writePages uses, so that the same code
+    // writes either there, through the server's /_hardcopy routes (see
+    // setupHardcopyRoutes in dash-lineplot.py), or into a folder chosen in
+    // the browser's folder dialog.
+    function serverFolder(path, fetchFn) {
+        function fileUrl(name) {
+            return '/_hardcopy/files/' + encodeURIComponent(name);
+        }
+        return {
+            name: path,
+            getFileHandle: async function (name, opts) {
+                if (!(opts && opts.create)) {
+                    var found = await fetchFn(fileUrl(name), { method: 'HEAD' });
+                    if (found.status === 404) {
+                        throw Object.assign(new Error(name + ' not found'),
+                                            { name: 'NotFoundError' });
+                    }
+                    if (!found.ok) {
+                        throw new Error('server could not check ' + name +
+                                        ': ' + found.status);
+                    }
+                }
+                return {
+                    createWritable: async function () {
+                        var body = null;
+                        return {
+                            write: async function (data) { body = data; },
+                            close: async function () {
+                                var saved = await fetchFn(fileUrl(name), {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'image/png' },
+                                    body: body
+                                });
+                                if (!saved.ok) {
+                                    throw new Error('server refused ' + name + ': ' +
+                                                    (await saved.text()));
+                                }
+                            }
+                        };
+                    }
+                };
+            }
+        };
+    }
+
     if (typeof module === 'object' && module.exports) {
         module.exports = {
             PAGE: PAGE, mmToCss: mmToCss, mmToPx: mmToPx,
             cleanName: cleanName, pageFileNames: pageFileNames,
             layoutPages: layoutPages, crc32: crc32, setPngDpi: setPngDpi,
-            findLeftovers: findLeftovers
+            findLeftovers: findLeftovers, serverFolder: serverFolder
         };
         return;
     }
 
     // ---------------------------------------------------------------- browser
 
-    var UNSUPPORTED = 'Hardcopy needs Chrome or Edge, opened at a localhost address';
+    var UNSUPPORTED = 'Choosing a folder needs Chrome or Edge, opened at a localhost address';
 
     // the open box, if any, and whether pages are being written into it
     var box = null;
@@ -248,9 +300,10 @@
         }, 0);
     }
 
-    // The box: a file name field with Save and Cancel, or, when message is
-    // given, just that message and a Close button.
-    function openBox(message, defaultName, onSave) {
+    // The box: a file name field, a line saying where Save writes, and Save,
+    // Choose folder and Cancel; or, when message is given, just that
+    // message and a Close button.
+    function openBox(message, defaultName, onSave, onChoose) {
         var overlay = document.createElement('div');
         overlay.id = 'hardcopy-modal';
         overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;' +
@@ -274,9 +327,23 @@
         input.value = defaultName || '';
         input.style.cssText = 'width:100%;margin-bottom:0.8rem;';
 
+        var target = document.createElement('div');
+        target.id = 'hardcopy-target';
+        target.style.cssText = 'margin-bottom:0.8rem;font-size:1.2rem;';
+
         var save = document.createElement('button');
         save.id = 'hardcopy-save';
         save.textContent = 'Save';
+
+        // the folder dialog exists only in Chromium browsers on localhost
+        var choose = document.createElement('button');
+        choose.id = 'hardcopy-choose';
+        choose.textContent = 'Choose folder...';
+        choose.style.marginLeft = '0.8rem';
+        if (typeof window.showDirectoryPicker !== 'function') {
+            choose.disabled = true;
+            choose.title = UNSUPPORTED;
+        }
 
         var cancel = document.createElement('button');
         cancel.id = 'hardcopy-cancel';
@@ -289,13 +356,15 @@
 
         if (!message) {
             panel.appendChild(input);
+            panel.appendChild(target);
             panel.appendChild(save);
+            panel.appendChild(choose);
         }
         panel.appendChild(cancel);
         panel.appendChild(status);
 
-        box = { overlay: overlay, input: input, save: save, cancel: cancel,
-                status: status };
+        box = { overlay: overlay, input: input, target: target, save: save,
+                choose: choose, cancel: cancel, status: status };
 
         cancel.addEventListener('click', function () {
             if (!writing) {
@@ -303,11 +372,13 @@
             }
         });
         save.addEventListener('click', onSave);
+        choose.addEventListener('click', onChoose);
         overlay.addEventListener('keydown', function (event) {
             if (event.key === 'Escape' && !writing) {
                 event.preventDefault();
                 closeBox();
-            } else if (event.key === 'Enter' && !message && !writing) {
+            } else if (event.key === 'Enter' && !message && !writing &&
+                       event.target !== choose && event.target !== cancel) {
                 event.preventDefault();
                 onSave();
             }
@@ -407,12 +478,21 @@
             openBox('There are no graphs on this tab to print.');
             return;
         }
-        if (typeof window.showDirectoryPicker !== 'function') {
-            openBox(UNSUPPORTED);
-            return;
-        }
 
-        openBox(null, tab.getAttribute('data-tab-name'), function onSave() {
+        // where Save writes: the directory the server was started in
+        var serverPath = window.fetch('/_hardcopy/folder').then(function (response) {
+            if (!response.ok) {
+                throw new Error('the server did not report its directory (' +
+                                response.status + ')');
+            }
+            return response.json();
+        }).then(function (reply) {
+            return reply.path;
+        });
+
+        // pickFolder: false writes into the server's directory, true asks
+        // for a folder in the browser's folder dialog first
+        function save(pickFolder) {
             if (writing) {
                 return;
             }
@@ -423,17 +503,22 @@
                 return;
             }
 
-            // called straight from the click or the Enter key, so the
-            // browser still counts it as the reader's own action, which the
-            // folder dialog requires
-            var picking = window.showDirectoryPicker({ mode: 'readwrite',
-                                                       id: 'dash-lineplot-hardcopy' });
+            // The folder dialog is opened straight from the click, so the
+            // browser still counts it as the reader's own action, which it
+            // requires.
+            var destination = pickFolder
+                ? window.showDirectoryPicker({ mode: 'readwrite',
+                                               id: 'dash-lineplot-hardcopy' })
+                : serverPath.then(function (path) {
+                    return serverFolder(path, window.fetch.bind(window));
+                });
             writing = true;
             box.save.disabled = true;
+            box.choose.disabled = true;
             box.cancel.disabled = true;
             box.input.disabled = true;
 
-            picking.then(function (dir) {
+            destination.then(function (dir) {
                 return writePages(dir, name, tab, graphs);
             }).catch(function (err) {
                 if (err && err.name === 'AbortError') {
@@ -448,6 +533,19 @@
                 box.cancel.focus();
                 setStatus('Hardcopy failed: ' + (err && err.message ? err.message : err));
             });
+        }
+
+        openBox(null, tab.getAttribute('data-tab-name'),
+                function () { save(false); }, function () { save(true); });
+
+        serverPath.then(function (path) {
+            if (box !== null) {
+                box.target.textContent = 'Save writes into ' + path;
+            }
+        }, function (err) {
+            if (box !== null) {
+                box.target.textContent = 'Save is unavailable: ' + err.message;
+            }
         });
     }
 

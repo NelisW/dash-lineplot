@@ -10,10 +10,14 @@ port, `ToDisk` defaults to off, and `docs/SDD.md` was written. On
 2026-10-08 the hardcopy feature was added (Ctrl+Alt+H writes the visible
 tab to A4, 300 dpi PNG pages; graphs of `Height` 200 or less lose their
 box column), with a `tests/` folder, the `hardcopy-example.json` demo, a
-spec and a plan under `docs/superpowers/`. That work is implemented and
-verified but **uncommitted**, awaiting the user's commit and one manual
-check of the native folder dialog in Chrome/Edge. After that, the next
-work is whatever the user picks from `suggestedwork.md`.
+spec and a plan under `docs/superpowers/`; the user committed it,
+including the `commonX` spacer column, as `8d89405`. Since that commit,
+uncommitted: Save now writes into the server's working directory
+through new `/_hardcopy` routes, with the folder dialog kept behind a
+Choose folder button. The user has also staged the deletion of `dash-3dof.xlsx`
+(not yet committed; the references to it below are left until that is
+settled). After that, the next work is whatever the user picks from
+`suggestedwork.md`.
 
 History-file cadence: size threshold, 30 KB (matching the convention this
 work already used in the `systemCHandbook` handoff it was split out of).
@@ -143,11 +147,14 @@ keeps its x axis aligned with theirs (user's request, 2026-10-08). On a
 `commonX` tab it still follows an x range typed beside a taller sibling. This affects the
 included `gimbal` tab of `dash-config.xlsx` (Height 200).
 
-**Hardcopy.** Ctrl+Alt+H, handled entirely in `assets/hardcopy.js`, takes
-a file name in an in-page box, asks for a folder with the native folder
-dialog (`showDirectoryPicker`, Chrome/Edge on localhost only), and writes
-the visible tab's graphs as A4 portrait PNG pages at 300 dpi: `name.png`
-or `name-p1.png`, `name-p2.png`, .... Graphs only, current zoom included.
+**Hardcopy.** Ctrl+Alt+H, rendered in `assets/hardcopy.js`, takes a file
+name in an in-page box and writes the visible tab's graphs as A4 portrait
+PNG pages at 300 dpi: `name.png` or `name-p1.png`, `name-p2.png`, ....
+Save (Enter) writes them into the directory the server was started in,
+through the server's `/_hardcopy` routes (`setupHardcopyRoutes`), in any
+browser; Choose folder uses the native folder dialog
+(`showDirectoryPicker`, Chrome/Edge on localhost only), which cannot be
+opened at a given path. Graphs only, current zoom included.
 A sheet's `HardcopyGraphsPerPage` row gives equal slots per page;
 without it graphs keep their on-screen heights. Each tab's content is
 wrapped in a `graph-tab` div whose data attributes carry the tab name and
@@ -199,8 +206,17 @@ not silently forgetting.
 - `pkill -f dash-lineplot.py` from a shell that is itself running the
   command matches its own process too.
 - Hardcopy: `showDirectoryPicker` must be called synchronously from the
-  Save click or Enter key (user activation); the rendering and writing
-  that follow may be asynchronous. A Save-As picker cannot be used
+  Choose folder click (user activation); the rendering and writing that
+  follow may be asynchronous. Its `startIn` takes only a handle or a
+  fixed well-known folder, never a path -- hence the server routes for
+  the working directory.
+- The `/_hardcopy` write route is a `PUT` of `image/png` on purpose: a
+  cross-origin page cannot send that without a CORS preflight, which the
+  server never grants (verified: only the OPTIONS reached the server; a
+  plain `POST` got 405). Do not relax it to `POST` or accept
+  `text/plain`, or any web site could write PNGs into the working
+  directory. Dash refuses every request, including these routes, until a
+  layout is set, so a test app needs `app.layout = html.Div()`. A Save-As picker cannot be used
   instead, because its handle grants only the one file it names.
   `canvas.toBlob` writes no resolution, so `setPngDpi` inserts a `pHYs`
   chunk; without it Word places a page at about three times A4.

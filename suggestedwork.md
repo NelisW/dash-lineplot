@@ -86,13 +86,13 @@ than fixed structurally, see
 
 | Global | Set in | Read in |
 |---|---|---|
-| `dfPlotterHeader` | `loadConfig:1514-1515` | `makeGraphSet:924-925`, `loadConfig:1518,1524-1525` |
-| `dfPlotterConfig` | `loadConfig:1533-1534,1575` | `prepareGraphs:1397,1403`, `loadData:1650-1652` |
-| `pageDensity` | `loadConfig:1522-1523,1527` | `makeGraphSet:1256,1280`, `makePage:1474` |
-| `divSets` | `prepareGraphs:1382,1388,1413` | `makePage:1441`, `render_content:1774` |
-| `graphTabs` | `prepareGraphs:1383,1391,1415` | `makePage:1443` |
-| `graphList` | `prepareGraphs:1384,1394,1414` | `setupCallbacks:1779` |
-| `dashApp` | `runDash:1724-1725` | throughout `runDash`, and `runPlotter:2103` |
+| `dfPlotterHeader` | `loadConfig:1521-1522` | `makeGraphSet:931-932`, `loadConfig:1525,1531-1532` |
+| `dfPlotterConfig` | `loadConfig:1540-1541,1582` | `prepareGraphs:1404,1410`, `loadData:1657-1659` |
+| `pageDensity` | `loadConfig:1529-1530,1534` | `makeGraphSet:1263,1287`, `makePage:1481` |
+| `divSets` | `prepareGraphs:1389,1395,1420` | `makePage:1448`, `render_content:1835` |
+| `graphTabs` | `prepareGraphs:1390,1398,1422` | `makePage:1450` |
+| `graphList` | `prepareGraphs:1391,1401,1421` | `setupCallbacks:1840` |
+| `dashApp` | `runDash:1731-1732` | throughout `runDash`, and `runPlotter:2164` |
 
 Consequences, in order of how much they cost:
 
@@ -103,7 +103,7 @@ Consequences, in order of how much they cost:
 - `makeGraphSet` reads `dfPlotterHeader` and `pageDensity` out of module
   scope while taking `dft` as an argument, so its inputs are half explicit
   and half ambient. Nothing about the signature says what it needs.
-- A callback closure reading `divSets` (`render_content:1774`) depends on
+- A callback closure reading `divSets` (`render_content:1835`) depends on
   `prepareGraphs` having run first, with no way to assert it.
 
 Fix: make all of them instance attributes -- `self.divSets`, `self.config`
@@ -139,16 +139,16 @@ The configuration index encodes set and trace numbers into the row label,
 `yValue#003-007`, and the graph code takes it apart with string surgery:
 
 ```python
-setStr = str(index).split('#')[1].split('-')[0]     # dash-lineplot.py:1005
-setStr = str(index).split('#')[1]                   # dash-lineplot.py:1140
+setStr = str(index).split('#')[1].split('-')[0]     # dash-lineplot.py:1012
+setStr = str(index).split('#')[1]                   # dash-lineplot.py:1147
 ```
 
 Membership is then tested by substring rather than equality:
 `'Datafile' in var_name`, `'Title' in var_name`, `'yLabel' in var_name`,
-`'yValue' in var_name` (`dash-lineplot.py:1554,1561,1564,1567`) -- so a
+`'yValue' in var_name` (`dash-lineplot.py:1561,1568,1571,1574`) -- so a
 `Variable` named `SubTitle` or `DatafileB` would be taken for a `Title` or
 a `Datafile` row. The tab label is derived as `graphTab.split('-')[1]`
-(`dash-lineplot.py:1415`), which truncates any sheet named
+(`dash-lineplot.py:1422`), which truncates any sheet named
 `graph-my-signals` to `my`.
 
 Fix: carry set and trace numbers as their own integer columns --
@@ -162,7 +162,7 @@ this project uses.
 
 ### 1.3 Duplicated configuration logic
 
-`readConfigTables` (`dash-lineplot.py:522`) and `workbookToDict` in
+`readConfigTables` (`dash-lineplot.py:529`) and `workbookToDict` in
 `tools/xlsx_config_to_json.py` each implement the `'graph' in sheetname`
 sheet filter and the openpyxl-for-sheet-order trick, and
 `CONFIG_COLUMNS`/`onCanonicalColumns` exist only in the former while the
@@ -189,7 +189,7 @@ largest run available before investing in any of them.
 
 `loadConfig` iterates each sheet row by row and writes back through `.loc`
 on every iteration, then grows the master frame with `pd.concat` inside
-the sheet loop (`dash-lineplot.py:1575`). Both are standard pandas
+the sheet loop (`dash-lineplot.py:1582`). Both are standard pandas
 anti-patterns: each `.loc` assignment on a mixed-dtype frame can copy, and
 each `concat` reallocates everything accumulated so far.
 
@@ -201,7 +201,7 @@ the column once, and collect the per-sheet frames in a list for a single
 ### 2.2 Trace data duplicated for the click/selection readout
 
 ```python
-self.graphTraces[grID] = [                                # dash-lineplot.py:1294
+self.graphTraces[grID] = [                                # dash-lineplot.py:1301
     (trace.get('name', ''), trace['x'], trace.get('customdata'),
      trace.get('text'))
     for trace in thisGraphData]
@@ -219,9 +219,9 @@ demand. The frames are already in memory.
 
 ### 2.3 Per-click work is linear and uncached
 
-`commonClickMessage` (`dash-lineplot.py:667`) calls `nearestSample` for
+`commonClickMessage` (`dash-lineplot.py:674`) calls `nearestSample` for
 every trace of every graph in a `commonX` group on every click, and
-`nearestSample` (`dash-lineplot.py:414`) builds a fresh `np.asarray` over
+`nearestSample` (`dash-lineplot.py:421`) builds a fresh `np.asarray` over
 the whole x column each time.
 
 Fix: cache the `numpy` x array per trace at build time. For a monotonic x
@@ -232,7 +232,7 @@ rather than linear time, and monotonicity can be checked once at load.
 ### 2.5 The configuration workbook is opened twice
 
 `readConfigTables` builds a `pd.ExcelFile` and then calls
-`oxl.load_workbook(configfile)` (`dash-lineplot.py:565`) for the sheet
+`oxl.load_workbook(configfile)` (`dash-lineplot.py:572`) for the sheet
 order, parsing the file twice. `pd.ExcelFile` already holds the openpyxl
 workbook as its `.book`, so the order is available without a second read.
 The same duplication exists in `tools/xlsx_config_to_json.py`.
@@ -242,7 +242,7 @@ The same duplication exists in `tools/xlsx_config_to_json.py`.
 ### 3.1 File-type dispatch is still substring-based
 
 ```python
-extension = Path(datapath).suffix.lower()    # dash-lineplot.py:1679 (case-folding now done)
+extension = Path(datapath).suffix.lower()    # dash-lineplot.py:1686 (case-folding now done)
 if 'xls' in extension: ...
 elif 'json' in extension: ...
 ```
@@ -264,7 +264,7 @@ clean-up would be.
 
 ### 3.3 `suppress_callback_exceptions` is broader than it needs to be
 
-Set unconditionally in `runDash` (`dash-lineplot.py:1738`), with a `#
+Set unconditionally in `runDash` (`dash-lineplot.py:1745`), with a `#
 todo` comment already in the code next to it. Now that callback
 registration is driven only by `graphList` (the graphs actually on the
 page), the only dynamic content that still needs suppression is the
@@ -301,8 +301,8 @@ failure mode `closed-history.md`'s N1 entry describes.
 
 The "Previous" and "Range" lines of the Click Data box come from history
 held on the server, in the `DashLinePlot` instance: `self.clickedData`
-(`dash-lineplot.py:639`, read and written by `display_click_data`) and
-`self.clickedX` (`dash-lineplot.py:650`, used by `commonClickMessage`).
+(`dash-lineplot.py:646`, read and written by `display_click_data`) and
+`self.clickedX` (`dash-lineplot.py:657`, used by `commonClickMessage`).
 Dash callbacks for every client run against that one instance, so two
 browser windows open on the same server feed one history per graph: a
 click in one window becomes the "Previous" point of the next click in
