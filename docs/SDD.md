@@ -122,6 +122,7 @@ configuration. Several processes may run at once, each on its own port
 | Readout helpers | `commonClickMessage`, `commonSelectMessage`, `selectionBounds`, `nearestSample`, `traceYExtent` | Format click and selection readouts from true values. |
 | Port selection | `freePort` | Find a verified free port at or above the requested one. |
 | Browser-side sync | `assets/graphsync.js` | Page-wide hover sync; shared x range across a `commonX` tab. |
+| Hardcopy | `assets/hardcopy.js` | Ctrl+Alt+H: render the visible tab's graphs to A4, 300 dpi PNG pages and write them to a folder the reader chooses. |
 | Styling | `assets/bWLwgP.css`, `assets/density.css` | Base grid and typography; compact/comfortable spacing. |
 | Config generator | `tools/config_from_run.py` | Write a first-pass JSON configuration for a directory of JSON telemetry. |
 | Config converter | `tools/xlsx_config_to_json.py` | Convert an `.xlsx` configuration to the equivalent JSON. |
@@ -323,6 +324,15 @@ Click Data box, and, only when some trace has markers, the Rectangle Tool
 Selection Data box. The range inputs' placeholders show the data extent
 (`traceYExtent` for y).
 
+A graph whose block `height` is `BOXES_MIN_HEIGHT` (200) or less
+(`hasBoxColumn`) gets no readout column. It is placed in a
+`twelve columns` div, except on a `commonX` tab where at least one block
+has boxes: there it keeps the `nine columns` div and an empty
+`three columns` spacer, so every plot area on the tab has the same width
+and the shared x axis lines up on screen. Every graph that does get a
+readout column is recorded in `self.boxedGraphs`, which `setupCallbacks`
+uses to decide what to register.
+
 On a `commonX` tab the row also carries the class `common-x`, which is
 what `graphsync.js` keys on, and every graph id of the tab is recorded in
 `self.commonXGroups`.
@@ -330,6 +340,14 @@ what `graphsync.js` keys on, and every graph id of the tab is recorded in
 Each tab also gets the header's `PageTop`, the sheet's `GraphTop` and
 `GraphBottom`, the header's `PageBottom`, and the logo image from
 `icons/logoSet2long.png`, embedded as base64.
+
+Everything built for a tab is wrapped in one `html.Div` of class
+`graph-tab`, which `makeGraphSet` returns as a one-element list. It
+carries two data attributes for `hardcopy.js`: `data-tab-name`, the sheet
+name after `graph-`, and `data-hardcopy-per-page`, the sheet's
+`HardcopyGraphsPerPage` passed through `hardcopyPerPage` (the digits of a
+positive whole number, otherwise an empty string). The graph rows remain
+siblings inside the wrapper, so `graphsync.js` grouping is unaffected.
 
 ### Export to disk
 
@@ -362,6 +380,15 @@ graphs exist in the browser at any time.
 | `display_click_data` | the graph's `clickData` | its Click Data box | Non-`commonX` graphs: previous and current `[x, y]` from `customdata`, and their difference. |
 | `display_common_click_data` | `clickData` of every graph in the group | its Click Data box | `commonX` graphs: x history and, for each trace, the nearest recorded sample at the clicked x. |
 | `display_selected_data`, `display_common_selected_data` | `selectedData` of the graph, or of its whole group | its selection box | The selected x window and, for each trace, its true y extent inside it (enumerations: the states visited). Box and lasso selections are both handled (`selectionBounds`). |
+
+Only graphs in `self.boxedGraphs` have range boxes and readouts, so the
+callbacks are registered accordingly. The x group of `apply_ranges` is the
+graph's `commonX` group (or the graph alone) filtered to boxed graphs;
+`apply_ranges` is registered whenever that filtered group is not empty,
+which lets a graph without boxes on a `commonX` tab follow a range typed
+beside a sibling. `show_ranges` and the click and selection callbacks are
+registered for boxed graphs only, since their outputs live in the boxes;
+their inputs still include every graph of the group.
 
 Callbacks that serve a whole group bind the per-graph identity through a
 default argument or a `State`, not a closure over the loop variable,
@@ -420,6 +447,47 @@ whenever tab content is replaced.
   graph, rather than one page-wide flag, means one stuck graph cannot
   disable syncing everywhere.
 
+`assets/hardcopy.js`, also served automatically, writes the hardcopy:
+
+- Trigger: a `keydown` listener on `document` for Ctrl+Alt+H. A second
+  press while its box is open is ignored.
+- Tab and graphs: the first `.graph-tab` with a non-null `offsetParent`,
+  and its `.js-plotly-plot` elements in document order.
+- Name and folder: an in-page box takes the file name (default
+  `data-tab-name`; `cleanName` drops a trailing `.png` and refuses
+  `<>:"/\|?*`), then `showDirectoryPicker` is called straight from the
+  Save or Enter handler, which keeps the user activation it requires. A
+  folder picker, not `showSaveFilePicker`, because a Save-As handle
+  grants only the one file it names and cannot write further pages. Both
+  exist only in Chromium browsers on a secure origin; elsewhere the box
+  shows a message instead.
+- Layout: sizes are in CSS pixels (96 per inch). The printable area is A4
+  less 10 mm margins, 718 x 1047 CSS px. `layoutPages` divides each page
+  into `data-hardcopy-per-page` equal slots, or, when that is empty,
+  stacks graphs at their `offsetHeight`, starting a new page when one
+  does not fit and cutting a graph taller than a page down to one page.
+- Rendering: `Plotly.toImage` per graph at its printed size with
+  `scale = 300 / 96`, so text keeps its on-screen physical size, drawn onto
+  a white 2480 x 3508 canvas. The current figure is rendered, so the
+  current zoom prints.
+- Resolution: `canvas.toBlob` records none, so `setPngDpi` inserts a
+  `pHYs` chunk (11811 pixels per metre, unit metre) after `IHDR`, with its
+  CRC-32, replacing any existing one.
+- Writing: existing files among `pageFileNames` are counted first and one
+  `confirm` asked before overwriting; each page is then written with
+  `getFileHandle(..., {create: true})` and `createWritable`. Afterwards
+  `findLeftovers` lists same-name pages this run did not replace (the
+  higher pages of a longer earlier run, or `name.png` beside a numbered
+  set, or the reverse); they are named in the closing message, never
+  deleted.
+- After a failure, focus moves to the Cancel button, so Escape still
+  closes the box (disabling the focused name field would otherwise leave
+  focus on the page body, outside the box's key handler).
+
+The pure functions (`cleanName`, `pageFileNames`, `layoutPages`, `crc32`,
+`setPngDpi`, `findLeftovers`, `mmToCss`, `mmToPx`) are exported under node, for
+`tests/hardcopy.test.js`, by a guard ahead of the browser wiring.
+
 `density.css` tightens the vertical spacing of the base stylesheet and
 lays out the graph row and readout column; the density class on the page
 root selects between compact and comfortable rules.
@@ -475,6 +543,30 @@ is ignored.
 cells are omitted rather than written as `null`, since the loader
 reinstates missing columns as NaN.
 
+`tools/make_hardcopy_demo_data.py` regenerates `data/hardcopy-demo.csv`,
+the dummy data behind `hardcopy-example.json`.
+
+## Tests
+
+`tests/` holds the automated tests. Run them from the repository root:
+
+```bash
+python -m pytest tests
+node --test tests/hardcopy.test.js
+```
+
+| File | Covers |
+|---|---|
+| `tests/conftest.py` | Loads `dash-lineplot.py` by path and builds a page from a configuration; `walk` and `props` helpers for the Dash component tree. |
+| `tests/test_demo.py` | `hardcopy-example.json` builds three tabs of 10, 6 and 3 graphs. |
+| `tests/test_layout.py` | `hardcopyPerPage`, the `graph-tab` wrapper, the 200 pixel box threshold, full-width rows. |
+| `tests/test_callbacks.py` | Callback registration read back from `dashApp.callback_map`: none for unboxed graphs, boxed-only x groups on a mixed `commonX` tab, full wiring on `commonx-example.json`. |
+| `tests/hardcopy.test.js` | The pure functions of `assets/hardcopy.js`. |
+| `tests/test_pngcheck.py`, `tests/pngcheck.py` | A checker for written pages (size, `pHYs`, CRCs), usable as a script: `python tests/pngcheck.py page.png`. |
+
+Rendering and file writing happen in the browser and are not covered by
+these tests.
+
 ## Dependencies
 
 From `environment.yml` (conda-forge, version floors only): Python 3.13 or
@@ -510,35 +602,37 @@ in `suggestedwork.md`.
 
 ## Code map
 
-Line ranges in `dash-lineplot.py` as of 2026-10-07.
+Line ranges in `dash-lineplot.py` as of 2026-10-08.
 
 | Function or block | Lines |
 |---|---|
 | imports, Dash import guard | 69-103 |
 | `resourcePath` | 112-121 |
-| `CONFIG_COLUMNS` | 133-135 |
-| `splitDataRef` | 138-156 |
-| `readJsonData` | 159-209 |
-| `traceYExtent` | 212-236 |
-| `cellFloat`, `cellText`, `cellFlag` | 239-272 |
-| `resolveSetContexts` | 275-337 |
-| `selectionBounds` | 340-379 |
-| `nearestSample` | 382-401 |
-| `isEnumSeries`, `parseCategories`, `enumCategories` | 404-473 |
-| `isJsonConfig`, `readConfigTables` | 476-536 |
-| `readPageTitle` | 539-558 |
-| `freePort` | 561-595 |
-| `DashLinePlot.__init__` | 600-627 |
-| `commonClickMessage`, `commonSelectMessage` | 630-751 |
-| `generateFeedbackBoxes` | 754-845 |
-| `graphToDisk` | 848-864 |
-| `makeGraphSet` | 868-1305 |
-| `prepareGraphs` | 1308-1353 |
-| `makePage` | 1356-1433 |
-| `loadConfig` | 1436-1513 |
-| `readdatafile` | 1516-1569 |
-| `loadData` | 1572-1640 |
-| `runDash` | 1644-1687 |
-| `setupCallbacks` | 1689-1966 |
-| `runPlotter` | 1969-2030 |
-| CLI entry point | 2035-end |
+| `CONFIG_COLUMNS`, `BOXES_MIN_HEIGHT` | 133-141 |
+| `splitDataRef` | 144-162 |
+| `readJsonData` | 165-215 |
+| `traceYExtent` | 218-242 |
+| `cellFloat`, `cellText`, `cellFlag` | 245-278 |
+| `hardcopyPerPage` | 281-292 |
+| `hasBoxColumn` | 295-304 |
+| `resolveSetContexts` | 307-369 |
+| `selectionBounds` | 372-411 |
+| `nearestSample` | 414-433 |
+| `isEnumSeries`, `parseCategories`, `enumCategories` | 436-505 |
+| `isJsonConfig`, `readConfigTables` | 508-568 |
+| `readPageTitle` | 571-590 |
+| `freePort` | 593-627 |
+| `DashLinePlot.__init__` | 632-664 |
+| `commonClickMessage`, `commonSelectMessage` | 667-788 |
+| `generateFeedbackBoxes` | 791-882 |
+| `graphToDisk` | 885-901 |
+| `makeGraphSet` | 905-1367 |
+| `prepareGraphs` | 1370-1415 |
+| `makePage` | 1418-1495 |
+| `loadConfig` | 1498-1575 |
+| `readdatafile` | 1578-1631 |
+| `loadData` | 1634-1702 |
+| `runDash` | 1706-1749 |
+| `setupCallbacks` | 1751-2041 |
+| `runPlotter` | 2044-2105 |
+| CLI entry point | 2110-end |

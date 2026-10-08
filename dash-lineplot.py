@@ -134,6 +134,12 @@ CONFIG_COLUMNS = ['Variable', 'Value', 'Format', 'LineLabel', 'GraphType',
                   'Scale', 'Offset', 'Colour', 'Linewidth', 'Dash', 'Mode',
                   'MarkerOpacity', 'Categories', 'Datafile']
 
+# A graph whose block Height is at or below this many pixels is drawn without
+# the range-entry and readout column beside it: on a graph that short the
+# boxes are taller than the plot, and a page of small graphs is usually
+# wanted for a compact overview or a hardcopy rather than for measurement.
+BOXES_MIN_HEIGHT = 200
+
 ################################################################
 def splitDataRef(dataref):
     """
@@ -270,6 +276,32 @@ def cellFlag(value, default):
         return False
         
     return default
+
+################################################################
+def hardcopyPerPage(value):
+    """
+    A HardcopyGraphsPerPage cell as the string handed to the browser.
+
+    A positive whole number comes back as its digits; anything else, blank
+    included, comes back as '' and the hardcopy then keeps each graph's
+    on-screen height instead of dividing the page into equal slots.
+    """
+    number = cellFloat(value, None)
+    if number is None or number <= 0 or not number.is_integer():
+        return ''
+    return str(int(number))
+
+################################################################
+def hasBoxColumn(height):
+    """
+    Whether a graph of this block height is drawn with the range-entry and
+    readout column beside it; see BOXES_MIN_HEIGHT. A height that is not a
+    number keeps the column.
+    """
+    try:
+        return float(height) > BOXES_MIN_HEIGHT
+    except (TypeError, ValueError):
+        return True
 
 ################################################################
 def resolveSetContexts(dft):
@@ -623,6 +655,11 @@ class DashLinePlot:
         # the values the data file actually held
         self.graphXAxis = {}
 
+        # ids of the graphs drawn with the range-entry and readout column
+        # beside them; graphs of BOXES_MIN_HEIGHT or less have none, and
+        # get no callbacks that would write into it
+        self.boxedGraphs = set()
+
         # port the server was actually started on, set by runPlotter
         self.port = None
 
@@ -874,7 +911,7 @@ class DashLinePlot:
             | graph (string): graph set name, i.e. text following "graph-" in the sheet name.
 
         Returns:
-            | thisDivList (list): list of html Divs.
+            | tabList (list): one html Div, class graph-tab, holding the tab's content.
             | grList (list): list of the symbolic names of all graphs in this set.
             | xmin (double): minimum x value
             | xmax (double): maximum x value
@@ -917,6 +954,10 @@ class DashLinePlot:
         # row applies to every graph below it until the next one. A sheet with
         # a single block behaves exactly as it always did.
         setContexts = resolveSetContexts(dft)
+
+        # short graphs on a commonX tab line up with the boxed ones, if any
+        alignToBoxes = commonX and any(hasBoxColumn(c['height'])
+                                       for c in setContexts.values())
 
         # widest x range over every graph on the tab, for the x-range boxes
         xmin, xmax = None, None
@@ -1256,22 +1297,32 @@ class DashLinePlot:
                 for trace in thisGraphData]
             self.graphXAxis[grID] = (ctx['xscale'], ctx['xoffset'])
 
-            thisDivList.append(
-                html.Div(className=rowClass, children=[
-                    html.Div(className='nine columns', children=[
-                        dcc.Graph
-                        (
-                            id=grID,
-                            figure=figdict,
-                            style=graphStyle,
-                        )
-                    ]),
+            # A short graph gets no readout column: see BOXES_MIN_HEIGHT. It
+            # takes the whole row, except on a commonX tab that also has
+            # boxed graphs: there the graphs are read against one another at
+            # the same x, so it keeps their plot width, with an empty column
+            # where their boxes are.
+            graphDiv = dcc.Graph(id=grID, figure=figdict, style=graphStyle)
+            if hasBoxColumn(ctx['height']):
+                self.boxedGraphs.add(grID)
+                rowChildren = [
+                    html.Div(className='nine columns', children=[graphDiv]),
                     html.Div(className='three columns', children=[
                         self.generateFeedbackBoxes(grID, isMarkers, xmin, xmax,
                                                    *traceYExtent(thisGraphData))
                     ]),
-                ])
-            )
+                ]
+            elif alignToBoxes:
+                rowChildren = [
+                    html.Div(className='nine columns', children=[graphDiv]),
+                    html.Div(className='three columns'),
+                ]
+            else:
+                rowChildren = [
+                    html.Div(className='twelve columns', children=[graphDiv]),
+                ]
+
+            thisDivList.append(html.Div(className=rowClass, children=rowChildren))
 
             if toDisk:
                 self.graphToDisk(figdict, f'{grDir}/{graph}#{setStr}')
@@ -1302,7 +1353,18 @@ class DashLinePlot:
             for grID in grList:
                 self.commonXGroups[grID] = list(grList)
 
-        return thisDivList, grList, xmin, xmax
+        # One container for the whole tab. assets/hardcopy.js finds the tab
+        # on screen through it, and reads the default file name and the
+        # graphs-per-page setting from its data attributes, so the hardcopy
+        # needs no callback of its own.
+        perPageRows = dft[dft['Variable'] == 'HardcopyGraphsPerPage']['Value']
+        tabDiv = html.Div(className='graph-tab', children=thisDivList, **{
+            'data-tab-name': graph.split('-')[1],
+            'data-hardcopy-per-page':
+                hardcopyPerPage(perPageRows.values[0]) if not perPageRows.empty else '',
+        })
+
+        return [tabDiv], grList, xmin, xmax
 
     ##########################################
     def prepareGraphs(self):
@@ -1731,7 +1793,15 @@ class DashLinePlot:
             # one entry zooms the whole tab. _group is a default argument and
             # not a closure, because the loop variable would otherwise be
             # rebound long before the callback ever fires.
-            xGroup = self.commonXGroups.get(theGraph, [theGraph])
+            #
+            # Only graphs drawn with boxes have buttons to listen to. A graph
+            # without boxes on a commonX tab still follows a range typed
+            # beside any sibling that has them; one with no boxed graph in
+            # its group has nothing that could set its range at all.
+            xGroup = [sibling for sibling in self.commonXGroups.get(theGraph, [theGraph])
+                      if sibling in self.boxedGraphs]
+            if not xGroup:
+                continue
 
             @dashApp.callback(
                 Output(theGraph, 'figure'),
@@ -1803,6 +1873,11 @@ class DashLinePlot:
                     changed = True
 
                 return patched if changed else dash.no_update
+
+            # Everything below writes into this graph's own boxes, so a graph
+            # drawn without them needs none of it.
+            if theGraph not in self.boxedGraphs:
+                continue
 
             # ---- keep the range boxes showing what the axes actually are ---
             # Zooming, panning or double-clicking with the mouse changes the

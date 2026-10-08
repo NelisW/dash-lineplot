@@ -404,3 +404,95 @@ history lives in the `DashLinePlot` instance (`self.clickedData`,
 `self.clickedX`), so every browser viewing one server shares it. Marked
 as found by reading the source, not yet reproduced live. Proposed fix: a
 `dcc.Store` per graph, folding in the 3.4 click-history shape cleanup.
+
+## Session, 2026-10-08 -- handoff refreshed for a cold restart
+
+User had committed all 2026-10-07 work (`360cf0f`, `eeca2c7`,
+`ef0bdf0`); working tree clean, `master` one commit ahead of
+`origin/master` (unpushed) at the time of this entry. `handoff.md`
+updated in place: status line; file inventory (`icons/logoSet2long.png`,
+which an earlier reply this session wrongly called an empty untracked
+folder; `archive-no-commit/prompt.md`; `graphs/`); section 2 gained the
+port and `ToDisk` behaviour; section 3 reflowed; section 4's
+`prompt.md` note moved back under the `archive-no-commit/` bullet it
+belongs to (an earlier edit had left it under the no-commit bullet);
+section 5's one-line backlog summary refreshed; section 6 now points at
+`docs/SDD.md` and gains a verification step with the test-port lesson;
+section 7 records the Windows `dashplot` environment path and versions
+(numpy 2.4.4 is below the `environment.yml` floor of 2.5).
+
+## Session, 2026-10-08 -- hardcopy output
+
+User asked for a hardcopy of one tab's graphs: PNG at 300 dpi, a
+keystroke trigger, a user-chosen file name, graphs only (no tab names),
+several pages per tab, a per-tab graphs-per-page setting in the config,
+the text-entry boxes hidden on graphs of `Height` 200 or less, and a demo.
+Brainstormed, then a spec and a plan were written and approved
+(`docs/superpowers/specs/2026-10-08-hardcopy-design.md`,
+`docs/superpowers/plans/2026-10-08-hardcopy.md`), then implemented in
+this session task by task, test first. Nothing committed.
+
+Decisions taken with the user: browser-side rendering
+(`Plotly.toImage` + canvas + File System Access API) rather than kaleido
+on the server; Chrome/Edge only; A4 portrait; one dialog with numbered
+files, which forced a folder picker plus an in-page name box (a Save-As
+handle cannot write sibling files); with no `HardcopyGraphsPerPage` row,
+graphs keep their on-screen heights (changed from an earlier "scale to
+page width with aspect kept", which would print 150 px graphs a few
+millimetres tall); tests kept in a new `tests/` folder (pytest + node).
+
+Implemented: `BOXES_MIN_HEIGHT`, `hardcopyPerPage`, `self.boxedGraphs`,
+the `graph-tab` wrapper in `makeGraphSet`; `setupCallbacks` registers
+callbacks only where their components exist (x groups filtered to boxed
+graphs); `assets/hardcopy.js`; `hardcopy-example.json`,
+`data/hardcopy-demo.csv`, `tools/make_hardcopy_demo_data.py`;
+`tests/` (9 pytest, 6 node). Docs: userguide (Hardcopy section, `Height`
+and `HardcopyGraphsPerPage` rows, page layout), SDD (component table,
+page rows, callbacks, browser side, new Tests section, code map),
+README paragraph, `suggestedwork.md` line citations refreshed and its
+section 4 opening corrected (tests now exist, for this work only).
+
+Verified: all tests pass; in the built-in browser with a stand-in folder
+object, `many` -> 3 pages, `mixed` -> 2, `boundary` -> `b.png`, all
+2480 x 3508 with `pHYs` 11811/11811/1 and valid CRCs (`tests/pngcheck.py`);
+pages inspected as images (graphs only, zoom kept); declined overwrite,
+Cancel, Escape, cancelled folder dialog, invalid name and a second
+keypress all write nothing. Shipped configs: `dash-config.xlsx`,
+`dash-config-sim.xlsx`, `dash-config.json`, `commonx-example.json` load
+and their Apply/Reset/click/select readouts work; `gimbal` in
+`dash-config.xlsx` is now full-width without boxes. `dash-3dof.xlsx`
+could not be started: its data lives in the sibling `systemCHandbook`
+repository, absent on this machine. Not verified: the real native folder
+dialog, which only the user can drive -- left for the user.
+
+Noticed, not changed: `dash-config.json` has `Include` false on
+`xyPlot`, `Attitude` and `gimbal`, which `dash-config.xlsx` includes,
+although section 1 says the two should behave identically. On a
+`commonX` tab, graphs drawn with markers autorange x with padding
+(-1..21) while line-only graphs autorange to 0..20, so the tab is not
+x-aligned until the first zoom.
+
+Addendum, same session: a fresh whole-change review found nothing
+critical. Fixed after it, test first: Escape now closes the box after a
+failure (focus moved to Cancel); pages of an earlier, longer hardcopy of
+the same name are named in the closing message, never deleted
+(`findLeftovers`, a 7th node test); the `suggestedwork.md` section 1.1
+`function:line` table refreshed (my first pass had missed that format).
+Deferred minors: a 3 px white seam between equal slots, an unreachable
+non-numeric-height fallback, the stale layout comment in
+`assets/density.css`. Open question for the user: on a mixed `commonX`
+tab the full-width short graphs no longer line up in x with the boxed
+ones on screen (the printed pages do).
+
+Follow-up, same session: at the user's request, short graphs on a
+`commonX` tab that also has boxed graphs now keep the `nine columns`
+width with an empty `three columns` spacer, so the shared x axis lines up
+on screen (measured at 1400 px: all six `mixed` plot areas span the same
+68-1001 px); elsewhere they stay full width. New `hasBoxColumn` helper,
+two tests (11 pytest now). Spec R1, userguide, SDD (page rows, code map),
+`density.css` comment, `suggestedwork.md` citations (remapped from HEAD
+by diff and verified against HEAD's source lines) updated. The user also
+asked for the folder dialog to open in the working directory: not
+possible with the File System Access API (`startIn` takes only a handle
+or one of desktop/documents/downloads/music/pictures/videos, per MDN),
+so alternatives were put to the user.

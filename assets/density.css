@@ -17,6 +17,10 @@
  *                              .feedback-box   Click Data
  *                              .feedback-box   Rectangle Tool Selection Data
  *
+ * A graph of Height 200 or less has no readout column: it is a single
+ * .twelve.columns div, or, on a commonX tab that has boxed graphs, the
+ * same two columns with the .three.columns one left empty.
+ *
  * The readouts sit beside the graph rather than beneath it, so consecutive
  * graphs can sit almost touching.
  */

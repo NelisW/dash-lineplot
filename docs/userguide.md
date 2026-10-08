@@ -358,7 +358,7 @@ four and the graph set entries are required; the rest take defaults.
 
 | Variable | Meaning |
 |---|---|
-| `Height` | Height of each graph in the browser, in pixels. |
+| `Height` | Height of each graph in the browser, in pixels. A graph of 200 or less is drawn without the column of boxes beside it. |
 | `Datafile` | Path to the data file for this tab. The keyword `master` selects the file named on the header sheet. |
 | `xLabel` | Label for the x axis. |
 | `xValue` | Name of the data column supplying x values. |
@@ -370,6 +370,7 @@ four and the graph set entries are required; the rest take defaults.
 | `Include` | `True` or `False`. Whether this tab appears at all. Defaults to `True`. |
 | `ToDisk` | `True` or `False`. Whether to write a standalone HTML copy into `graphs/`. Defaults to `False`. |
 | `commonX` | `True` or `False`. Tie every graph on this tab to one x scale. Defaults to `False`. |
+| `HardcopyGraphsPerPage` | A positive whole number: the number of equal-height graphs on each hardcopy page of this tab. When absent, each graph keeps its own height. See Hardcopy below. |
 
 Any number of graphs may appear on one tab. A `Title` entry opens a new
 graph, and the `yLabel` and `yValue` entries that follow it belong to that
@@ -618,6 +619,17 @@ next, so a page is exactly as tall as its graphs.
 
 The height of each graph is the sheet's `Height` value, in pixels.
 
+A graph whose `Height` is 200 or less has no range entry, Click Data or
+Rectangle Tool box beside it: on a graph that short the boxes would be
+taller than the plot itself. It takes the full width of the row, except
+on a `commonX` tab that also has taller, boxed graphs: there it keeps
+their width, with an empty column where their boxes are, so that every
+graph on the tab has the same x axis length and a time reads at the same
+horizontal position on all of them. Zoom, pan, hover and `commonX`
+linking still work, and on a `commonX` tab a range typed beside one of
+the taller graphs reaches the short ones too. The rule is applied per
+block, so one tab can mix both kinds.
+
 Select a tab to display its graphs. Graphs are drawn when the tab is first
 selected rather than when the page loads, so the first selection of a tab
 carrying a large data set takes a moment.
@@ -769,6 +781,65 @@ graph's own y extent within it. See the `commonX` section above.
 
 Markers slow rendering noticeably on large data sets, which is why they are
 not the default.
+
+### Hardcopy
+
+Press **Ctrl+Alt+H** to write the graphs of the tab on screen to one or
+more A4 portrait pages, each a 300 dpi PNG file. Only that tab is printed,
+and only its graphs: the tab strip, the markdown, the boxes beside the
+graphs and the logo are left out. Each graph prints as it is on screen,
+including the current zoom.
+
+1. Press Ctrl+Alt+H. A small box opens with a file name, filled in with the
+   tab name. Change it if wanted; a trailing `.png` is ignored, and a name
+   containing any of `< > : " / \ | ? *` is refused.
+1. Press Enter or Save. The system folder dialog opens; choose the folder
+   the pages go into. The browser may also ask whether the page may save
+   files there.
+1. The pages are written as `name.png` for a single page, or
+   `name-p1.png`, `name-p2.png`, and so on. If any of those files already
+   exists, the browser asks before overwriting it. Pages of an earlier
+   hardcopy under the same name that this one does not replace -- the
+   higher pages of a longer run, or `name.png` beside a numbered set --
+   are left in place, and the closing message names them so they are not
+   mistaken for part of the new copy.
+
+Escape or Cancel closes the box without writing anything, as does
+cancelling the folder dialog.
+
+Each page has 10 mm margins and is 2480 by 3508 pixels; the resolution is
+recorded in the file, so word processors place it at its true A4 size.
+Graphs take the full printable width. Their heights follow one of two
+rules:
+
+- **`HardcopyGraphsPerPage` set.** Each page is divided into that many
+  equal slots, filled in order. The last page keeps the same slot height
+  and leaves its unused slots blank.
+- **Not set.** Each graph keeps its `Height`, at 96 pixels to the inch, so
+  graphs print at the size they appear on screen and keep their relative
+  heights. A graph that does not fit in what is left of a page starts the
+  next one.
+
+Text and lines print at the same physical size as on screen.
+
+The hardcopy needs Chrome or Edge, with the page opened at a localhost
+address (`http://127.0.0.1:...` or `http://localhost:...`), because it
+writes the files through the browser's file-system access, which other
+browsers do not provide. Elsewhere the keystroke shows a message and does
+nothing else. The Plotly toolbar's own "Download plot as a PNG" still
+saves a single graph in any browser.
+
+`hardcopy-example.json` demonstrates all of this on dummy data from
+`data/hardcopy-demo.csv`:
+
+```bash
+python dash-lineplot.py --configfile hardcopy-example.json
+```
+
+Its tab `many` holds ten short graphs at four per page (three pages),
+`mixed` mixes graph heights on a `commonX` tab with no per-page setting
+(two pages), and `boundary` shows the 200 pixel threshold on a single page.
+`tools/make_hardcopy_demo_data.py` regenerates the data file.
 
 ## Features not currently available
 

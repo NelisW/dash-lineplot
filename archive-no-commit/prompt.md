@@ -165,9 +165,11 @@ for this purpose  we must change the app as follows:
 
 - provide a keystroke command to trigger the hardcopy generation, to be saved to a file where the user provide the filename (e.g., via a file dialog)
 - when making the hardcopy do not display the tab names (as a browser-based print command does), only show the graphs.
-- implement a function to generate the hardcopy of the graphs in 300 dpi
+- implement a function to generate the hardcopy of the graphs in PNG format in 300 dpi
 - provide the capability to print more than one page per tab, if there are too many graphs to fit on a single page
 - Provide the option in the json file to specify how many graphs per page a tab should display in the hardcopy.
-  
+- create a new demo/test case to demonstrate and test this capability. Use any form of dummy data as you please.
+
+Ask questions if anything is unclear or if you have suggestions.
 
 Report on the feasibility and implementation details of the hardcopy generation feature. Provide a spec and plan before implementation.

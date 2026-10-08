@@ -1,0 +1,404 @@
+{
+  "header": {
+    "Pagetitle": "Hardcopy demonstration",
+    "PageTop": "# Hardcopy demonstration\n\nPress Ctrl+Alt+H (Chrome or Edge) to write the graphs of the current tab to A4, 300 dpi PNG pages.",
+    "PageBottom": "",
+    "Datafile": "none",
+    "Density": "compact"
+  },
+  "sheets": {
+    "graph-many": [
+      {
+        "Variable": "Height",
+        "Value": 150
+      },
+      {
+        "Variable": "Datafile",
+        "Value": "data/hardcopy-demo.csv"
+      },
+      {
+        "Variable": "xLabel",
+        "Value": "Time [s]",
+        "Format": ".3f"
+      },
+      {
+        "Variable": "xValue",
+        "Value": "Time"
+      },
+      {
+        "Variable": "HardcopyGraphsPerPage",
+        "Value": 4
+      },
+      {
+        "Variable": "GraphTop",
+        "Value": "### Many small graphs\n\nTen graphs of Height 150: no range or readout boxes. HardcopyGraphsPerPage is 4, so Ctrl+Alt+H writes three pages."
+      },
+      {
+        "Variable": "Title",
+        "Value": "Sine1Hz"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Sine1Hz",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Sine1Hz",
+        "LineLabel": "Sine1Hz"
+      },
+      {
+        "Variable": "Title",
+        "Value": "Sine3Hz"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Sine3Hz",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Sine3Hz",
+        "LineLabel": "Sine3Hz"
+      },
+      {
+        "Variable": "Title",
+        "Value": "Sine7Hz"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Sine7Hz",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Sine7Hz",
+        "LineLabel": "Sine7Hz"
+      },
+      {
+        "Variable": "Title",
+        "Value": "Cosine2Hz"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Cosine2Hz",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Cosine2Hz",
+        "LineLabel": "Cosine2Hz"
+      },
+      {
+        "Variable": "Title",
+        "Value": "Ramp"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Ramp",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Ramp",
+        "LineLabel": "Ramp"
+      },
+      {
+        "Variable": "Title",
+        "Value": "Square"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Square",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Square",
+        "LineLabel": "Square"
+      },
+      {
+        "Variable": "Title",
+        "Value": "Step"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Step",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Step",
+        "LineLabel": "Step"
+      },
+      {
+        "Variable": "Title",
+        "Value": "Noise"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Noise",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Noise",
+        "LineLabel": "Noise"
+      },
+      {
+        "Variable": "Title",
+        "Value": "Sawtooth"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Sawtooth",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Sawtooth",
+        "LineLabel": "Sawtooth"
+      },
+      {
+        "Variable": "Title",
+        "Value": "Damped"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Damped",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Damped",
+        "LineLabel": "Damped"
+      },
+      {
+        "Variable": "Include",
+        "Value": true
+      },
+      {
+        "Variable": "ToDisk",
+        "Value": false
+      },
+      {
+        "Variable": "UseSubplots",
+        "Value": false
+      }
+    ],
+    "graph-mixed": [
+      {
+        "Variable": "Height",
+        "Value": 300
+      },
+      {
+        "Variable": "Datafile",
+        "Value": "data/hardcopy-demo.csv"
+      },
+      {
+        "Variable": "xLabel",
+        "Value": "Time [s]",
+        "Format": ".3f"
+      },
+      {
+        "Variable": "xValue",
+        "Value": "Time"
+      },
+      {
+        "Variable": "commonX",
+        "Value": true
+      },
+      {
+        "Variable": "GraphTop",
+        "Value": "### Mixed heights on one commonX tab\n\nTwo graphs of Height 300 with boxes, then four of Height 150 without. An x range typed into either large graph reaches all six. No HardcopyGraphsPerPage row, so the hardcopy keeps the on-screen heights: two pages."
+      },
+      {
+        "Variable": "Title",
+        "Value": "Damped"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Damped",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Damped",
+        "LineLabel": "Damped",
+        "Mode": "markers+lines",
+        "MarkerOpacity": 0
+      },
+      {
+        "Variable": "Title",
+        "Value": "Chirp"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Chirp",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Chirp",
+        "LineLabel": "Chirp",
+        "Mode": "markers+lines",
+        "MarkerOpacity": 0
+      },
+      {
+        "Variable": "Height",
+        "Value": 150
+      },
+      {
+        "Variable": "Title",
+        "Value": "Sine1Hz"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Sine1Hz",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Sine1Hz",
+        "LineLabel": "Sine1Hz"
+      },
+      {
+        "Variable": "Title",
+        "Value": "Square"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Square",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Square",
+        "LineLabel": "Square"
+      },
+      {
+        "Variable": "Title",
+        "Value": "Step"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Step",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Step",
+        "LineLabel": "Step"
+      },
+      {
+        "Variable": "Title",
+        "Value": "Triangle"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Triangle",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Triangle",
+        "LineLabel": "Triangle"
+      },
+      {
+        "Variable": "Include",
+        "Value": true
+      },
+      {
+        "Variable": "ToDisk",
+        "Value": false
+      },
+      {
+        "Variable": "UseSubplots",
+        "Value": false
+      }
+    ],
+    "graph-boundary": [
+      {
+        "Variable": "Height",
+        "Value": 200
+      },
+      {
+        "Variable": "Datafile",
+        "Value": "data/hardcopy-demo.csv"
+      },
+      {
+        "Variable": "xLabel",
+        "Value": "Time [s]",
+        "Format": ".3f"
+      },
+      {
+        "Variable": "xValue",
+        "Value": "Time"
+      },
+      {
+        "Variable": "GraphTop",
+        "Value": "### The 200 threshold\n\nTwo graphs of Height 200 (no boxes) and one of Height 201 (boxes). One hardcopy page."
+      },
+      {
+        "Variable": "Title",
+        "Value": "Sine3Hz"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Sine3Hz",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Sine3Hz",
+        "LineLabel": "Sine3Hz"
+      },
+      {
+        "Variable": "Title",
+        "Value": "Ramp"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Ramp",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Ramp",
+        "LineLabel": "Ramp"
+      },
+      {
+        "Variable": "Height",
+        "Value": 201
+      },
+      {
+        "Variable": "Title",
+        "Value": "Noise"
+      },
+      {
+        "Variable": "yLabel",
+        "Value": "Noise",
+        "Format": ".4f"
+      },
+      {
+        "Variable": "yValue",
+        "Value": "Noise",
+        "LineLabel": "Noise",
+        "Mode": "markers+lines",
+        "MarkerOpacity": 0
+      },
+      {
+        "Variable": "Include",
+        "Value": true
+      },
+      {
+        "Variable": "ToDisk",
+        "Value": false
+      },
+      {
+        "Variable": "UseSubplots",
+        "Value": false
+      }
+    ]
+  }
+}

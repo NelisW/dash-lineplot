@@ -64,6 +64,11 @@ with the state names on the y axis. Every graph on a page shares the hover
 readout, so one pointer position reads the whole page. See
 [docs/userguide.md](docs/userguide.md).
 
+Ctrl+Alt+H in Chrome or Edge writes the graphs of the current tab to A4,
+300 dpi PNG pages; `HardcopyGraphsPerPage` on a sheet sets how many go on a
+page, and `hardcopy-example.json` demonstrates it. See the Hardcopy
+section of [docs/userguide.md](docs/userguide.md).
+
 It the then proceeds to create and serve a Dash portal. 
 The page served has several elements, all constructed from the 
 information provided in the config file.
