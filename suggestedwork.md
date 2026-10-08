@@ -49,7 +49,9 @@ helps the xlsx path, not by JSON parity.
 **Verification status:** findings are checked against the running
 application (conda env `dashplot`, `dash-lineplot.py -f dash-config.xlsx`
 and the other shipped configs), not just read from the source, unless a
-finding says otherwise.
+finding says otherwise. `dash-lineplot.py` line numbers cited below were
+last checked against the code on 2026-10-07; the function names beside
+them are the stable reference.
 
 ## Priority summary
 
@@ -62,12 +64,12 @@ finding says otherwise.
 | 5 | Config walk is row-by-row `.loc` plus `concat` | Performance | Medium |
 | 6 | Full trace data duplicated into `self.graphTraces` | Performance | Medium |
 | 7 | Per-click work is linear, uncached | Performance | Medium |
-| 8 | HTML copies of every graph written by default | Behaviour | Medium |
-| 9 | Config workbook opened twice | Performance | Low |
-| 10 | File-type dispatch is still substring-based | Defect | Low |
-| 11 | Header `%` stripping lives in one reader, not normalised centrally | Inconsistency | Low |
-| 12 | `suppress_callback_exceptions` is broader than it needs to be | Robustness | Low |
-| 13 | Modern-Python remainder (see list) | Modernisation | Low |
+| 8 | Config workbook opened twice | Performance | Low |
+| 9 | File-type dispatch is still substring-based | Defect | Low |
+| 10 | Header `%` stripping lives in one reader, not normalised centrally | Inconsistency | Low |
+| 11 | `suppress_callback_exceptions` is broader than it needs to be | Robustness | Low |
+| 12 | Modern-Python remainder (see list) | Modernisation | Low |
+| 13 | Click history held on the server, shared by every browser viewing it | Defect | Low |
 
 ---
 
@@ -75,21 +77,22 @@ finding says otherwise.
 
 ### 1.1 Module-level `global` state
 
-Six `global` statements still carry per-instance state into module scope
-(down from eleven in the original review -- the other five were
-`allTabs`, `allGraphs`, `sliderMinValues`, `sliderMaxValues` and
-`tabIndex`, all deleted as dead code rather than fixed structurally, see
+Seven `global` statements still carry per-instance state into module
+scope, one per variable in the table below (the original review counted
+eleven; five of those, `allTabs`, `allGraphs`, `sliderMinValues`,
+`sliderMaxValues` and `tabIndex`, were since deleted as dead code rather
+than fixed structurally, see
 `closed-history.md`).
 
 | Global | Set in | Read in |
 |---|---|---|
-| `dfPlotterHeader` | `loadConfig:1417-1418` | `makeGraphSet:852-853`, `loadConfig:1421,1427-1428` |
-| `dfPlotterConfig` | `loadConfig:1436-1437,1478` | `prepareGraphs:1300,1306`, `loadData:1553-1555` |
-| `pageDensity` | `loadConfig:1425-1426,1430` | `makeGraphSet:1180,1204`, `makePage:1377` |
-| `divSets` | `prepareGraphs:1285,1291,1316` | `makePage:1344`, `render_content:1681` |
-| `graphTabs` | `prepareGraphs:1286,1294,1318` | `makePage:1346` |
-| `graphList` | `prepareGraphs:1287,1297,1317` | `setupCallbacks:1686` |
-| `dashApp` | `runDash:1627-1628` | throughout `runDash`, and `runPlotter:1989` |
+| `dfPlotterHeader` | `loadConfig:1452-1453` | `makeGraphSet:887-888`, `loadConfig:1456,1462-1463` |
+| `dfPlotterConfig` | `loadConfig:1471-1472,1513` | `prepareGraphs:1335,1341`, `loadData:1588-1590` |
+| `pageDensity` | `loadConfig:1460-1461,1465` | `makeGraphSet:1215,1239`, `makePage:1412` |
+| `divSets` | `prepareGraphs:1320,1326,1351` | `makePage:1379`, `render_content:1712` |
+| `graphTabs` | `prepareGraphs:1321,1329,1353` | `makePage:1381` |
+| `graphList` | `prepareGraphs:1322,1332,1352` | `setupCallbacks:1717` |
+| `dashApp` | `runDash:1662-1663` | throughout `runDash`, and `runPlotter:2028` |
 
 Consequences, in order of how much they cost:
 
@@ -100,7 +103,7 @@ Consequences, in order of how much they cost:
 - `makeGraphSet` reads `dfPlotterHeader` and `pageDensity` out of module
   scope while taking `dft` as an argument, so its inputs are half explicit
   and half ambient. Nothing about the signature says what it needs.
-- A callback closure reading `divSets` (`render_content:1681`) depends on
+- A callback closure reading `divSets` (`render_content:1712`) depends on
   `prepareGraphs` having run first, with no way to assert it.
 
 Fix: make all of them instance attributes -- `self.divSets`, `self.config`
@@ -136,16 +139,16 @@ The configuration index encodes set and trace numbers into the row label,
 `yValue#003-007`, and the graph code takes it apart with string surgery:
 
 ```python
-setStr = str(index).split('#')[1].split('-')[0]     # dash-lineplot.py:929
-setStr = str(index).split('#')[1]                   # dash-lineplot.py:1064
+setStr = str(index).split('#')[1].split('-')[0]     # dash-lineplot.py:964
+setStr = str(index).split('#')[1]                   # dash-lineplot.py:1099
 ```
 
 Membership is then tested by substring rather than equality:
 `'Datafile' in var_name`, `'Title' in var_name`, `'yLabel' in var_name`,
-`'yValue' in var_name` (`dash-lineplot.py:1457,1464,1467,1470`) -- so a
+`'yValue' in var_name` (`dash-lineplot.py:1492,1499,1502,1505`) -- so a
 `Variable` named `SubTitle` or `DatafileB` would be taken for a `Title` or
 a `Datafile` row. The tab label is derived as `graphTab.split('-')[1]`
-(`dash-lineplot.py:1318`), which truncates any sheet named
+(`dash-lineplot.py:1353`), which truncates any sheet named
 `graph-my-signals` to `my`.
 
 Fix: carry set and trace numbers as their own integer columns --
@@ -159,7 +162,7 @@ this project uses.
 
 ### 1.3 Duplicated configuration logic
 
-`readConfigTables` (`dash-lineplot.py:495`) and `workbookToDict` in
+`readConfigTables` (`dash-lineplot.py:490`) and `workbookToDict` in
 `tools/xlsx_config_to_json.py` each implement the `'graph' in sheetname`
 sheet filter and the openpyxl-for-sheet-order trick, and
 `CONFIG_COLUMNS`/`onCanonicalColumns` exist only in the former while the
@@ -186,7 +189,7 @@ largest run available before investing in any of them.
 
 `loadConfig` iterates each sheet row by row and writes back through `.loc`
 on every iteration, then grows the master frame with `pd.concat` inside
-the sheet loop (`dash-lineplot.py:1478`). Both are standard pandas
+the sheet loop (`dash-lineplot.py:1513`). Both are standard pandas
 anti-patterns: each `.loc` assignment on a mixed-dtype frame can copy, and
 each `concat` reallocates everything accumulated so far.
 
@@ -198,7 +201,7 @@ the column once, and collect the per-sheet frames in a list for a single
 ### 2.2 Trace data duplicated for the click/selection readout
 
 ```python
-self.graphTraces[grID] = [                                # dash-lineplot.py:1218
+self.graphTraces[grID] = [                                # dash-lineplot.py:1253
     (trace.get('name', ''), trace['x'], trace.get('customdata'),
      trace.get('text'))
     for trace in thisGraphData]
@@ -216,9 +219,9 @@ demand. The frames are already in memory.
 
 ### 2.3 Per-click work is linear and uncached
 
-`commonClickMessage` (`dash-lineplot.py:595`) calls `nearestSample` for
+`commonClickMessage` (`dash-lineplot.py:630`) calls `nearestSample` for
 every trace of every graph in a `commonX` group on every click, and
-`nearestSample` (`dash-lineplot.py:387`) builds a fresh `np.asarray` over
+`nearestSample` (`dash-lineplot.py:382`) builds a fresh `np.asarray` over
 the whole x column each time.
 
 Fix: cache the `numpy` x array per trace at build time. For a monotonic x
@@ -226,25 +229,10 @@ Fix: cache the `numpy` x array per trace at build time. For a monotonic x
 rather than linear time, and monotonicity can be checked once at load.
 `commonSelectMessage` has the same per-call `np.asarray` cost.
 
-### 2.4 HTML copies written on every run by default
-
-`toDisk` defaults to `True` (`dash-lineplot.py:862`), so every graph of
-every included tab is written to `./graphs/` as a standalone HTML file on
-every start-up, whether or not anyone asked. Each file embeds its own copy
-of the data and of the Plotly bundle.
-
-Note also that `.gitignore` describes the directory as "Generated by
-graphToDisk when a sheet sets GraphToDisk" (`.gitignore:9`), but the flag
-the code reads is `ToDisk`. One of the two names is wrong.
-
-Fix: default `toDisk` to `False` -- exporting is an explicit request, not
-a side effect of viewing -- and reconcile the flag name between the code,
-the `.gitignore` comment and `docs/userguide.md`.
-
 ### 2.5 The configuration workbook is opened twice
 
 `readConfigTables` builds a `pd.ExcelFile` and then calls
-`oxl.load_workbook(configfile)` (`dash-lineplot.py:538`) for the sheet
+`oxl.load_workbook(configfile)` (`dash-lineplot.py:533`) for the sheet
 order, parsing the file twice. `pd.ExcelFile` already holds the openpyxl
 workbook as its `.book`, so the order is available without a second read.
 The same duplication exists in `tools/xlsx_config_to_json.py`.
@@ -254,7 +242,7 @@ The same duplication exists in `tools/xlsx_config_to_json.py`.
 ### 3.1 File-type dispatch is still substring-based
 
 ```python
-extension = Path(datapath).suffix.lower()    # dash-lineplot.py:1582 (case-folding now done)
+extension = Path(datapath).suffix.lower()    # dash-lineplot.py:1617 (case-folding now done)
 if 'xls' in extension: ...
 elif 'json' in extension: ...
 ```
@@ -276,7 +264,7 @@ clean-up would be.
 
 ### 3.3 `suppress_callback_exceptions` is broader than it needs to be
 
-Set unconditionally in `runDash` (`dash-lineplot.py:1641`), with a `#
+Set unconditionally in `runDash` (`dash-lineplot.py:1676`), with a `#
 todo` comment already in the code next to it. Now that callback
 registration is driven only by `graphList` (the graphs actually on the
 page), the only dynamic content that still needs suppression is the
@@ -308,6 +296,27 @@ failure mode `closed-history.md`'s N1 entry describes.
 - Naming is camelCase throughout, against PEP 8 but consistent and
   deliberate -- leave it. Consistency with the existing file beats
   conformance here, and a rename would obscure every future diff.
+
+### 3.5 Click history is shared by every browser viewing one server
+
+The "Previous" and "Range" lines of the Click Data box come from history
+held on the server, in the `DashLinePlot` instance: `self.clickedData`
+(`dash-lineplot.py:607`, read and written by `display_click_data`) and
+`self.clickedX` (`dash-lineplot.py:618`, used by `commonClickMessage`).
+Dash callbacks for every client run against that one instance, so two
+browser windows open on the same server feed one history per graph: a
+click in one window becomes the "Previous" point of the next click in
+the other, and the reported range spans clicks made by different
+viewers. The same applies to two tabs of one browser.
+
+Found by reading the source, not yet reproduced in two live browser
+windows.
+
+Fix: keep the history in the browser, one `dcc.Store` per graph, passed
+to the click callback as a `State` and returned as a second `Output`, so
+each page carries its own. Fold the four-element `self.clickedData`
+shape (3.4) onto the same two-element list `commonClickMessage` already
+uses while doing this, rather than moving both shapes into stores.
 
 ## 4. Repository hygiene
 
@@ -360,8 +369,7 @@ than it needs to be. Fix, in the order that pays off soonest:
    run available. None of it is urgent on the data sets this repository
    ships.
 4. **Small, independent items** (section 3) and **hygiene follow-through**
-   (defaulting `toDisk` to `False`, the `.gitignore` wording, the
-   substring dispatch) can happen any time, in whatever commit next
+   (the substring dispatch) can happen any time, in whatever commit next
    touches the relevant code -- none of them need their own dedicated
    session.
 

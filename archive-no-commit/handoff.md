@@ -141,16 +141,18 @@ not silently forgetting.
 - Dash 4.x removed `run_server` outright (not merely deprecated); the
   method is `run`.
 - On Windows, Werkzeug's `SO_REUSEADDR` lets a second server bind a port
-  already in use, and the browser keeps reaching the first one. The CLI
-  therefore calls `freePort`, which walks upward from the requested port
+  already in use, and the browser keeps reaching the first one. Server
+  start-up therefore uses `freePort`, which walks upward from the requested port
   (to 65535, no fixed try limit) and accepts a port only if an
   *exclusive* bind succeeds (`SO_EXCLUSIVEADDRUSE` on Windows; a plain
   bind would pass) and then nothing answers a connect. The bind runs
   first because on Windows a refused loopback connect costs the full
   0.5 s timeout, so checking connect first made skipping a reserved
   range (`netsh interface ipv4 show excludedportrange protocol=tcp`)
-  take minutes. Only the CLI entry point does this; `runPlotter` called
-  as a module still uses the port it is given.
+  take minutes. `runPlotter` calls it just before starting the server
+  thread, so the CLI and module use behave the same; the port in use is
+  kept in `self.port` (`None` until a server is started), and the CLI
+  prints its URL from there.
 - `pkill -f dash-lineplot.py` from a shell that is itself running the
   command matches its own process too.
 
@@ -230,9 +232,6 @@ of performance items not yet worth measuring against real data.
   page-wide instead, in `graphsync.js`. Reimplementing anything closer to
   the original subplot-scoped behaviour is a separate decision, worth
   taking only if it turns out to be missed.
-- HTML copies of every graph are written to `./graphs/` on every run
-  whenever a sheet sets its disk-export flag; `suggestedwork.md` section
-  2.4 recommends defaulting that off.
 
 ## 6. How to Cold-Restart
 

@@ -292,8 +292,11 @@ Nothing was removed from `systemCHandbook`: it still correctly records WP2
 as complete and points to this repository for detail. This is additive,
 not a migration of record -- see the note at the end of `handoff.md`
 section 8. Both new files are untracked in git as of this entry; whether
-and how to commit them is the user's call, consistent with
-`archive-no-commit/` being excluded from version control by convention.
+and how to commit them is the user's call. (Corrected 2026-10-07: this
+entry originally said `archive-no-commit/` is excluded from version
+control by convention. That is wrong -- the folder must always be
+committed, despite its name; see the standing constraint in
+`handoff.md` section 4.)
 
 ## Session, 2026-10-07 -- handoff brought in line with the merged state
 
@@ -359,3 +362,45 @@ known limitations as a TODO: `makeGraphSet` treats a sheet with *no*
 Also brought `docs/userguide.md` (`--port` row) and `README.md` in line
 with the hardened port search: "not free" now covers reserved ports and
 ports that are taken but not serving, not only a running server.
+
+## Session, 2026-10-07 -- ToDisk defaults to off
+
+User confirmed that a sheet with no `ToDisk` row should not export.
+`makeGraphSet` now treats a missing row as off, matching a blank cell.
+This closed `suggestedwork.md` item 2.4 (moved to `closed-history.md` as
+pass 5; 2.5 keeps its number so older references stay valid; the
+priority table was renumbered). `.gitignore` comment corrected from
+`GraphToDisk` to `ToDisk`. `docs/userguide.md`, `docs/SDD.md` and
+`handoff.md` section 5 updated. Verified with scratch-directory variants:
+no row / blank / False -> 0 files, True -> 6.
+
+## Session, 2026-10-07 -- port check moved into runPlotter; backlog citations
+
+`suggestedwork.md`: all 20 stale `dash-lineplot.py` line citations
+refreshed, then refreshed again after this session's `runPlotter` change
+(49 cited lines checked by printing each one). Item 1.1 now says seven
+`global` statements (it said six; the table under it always listed
+seven), reworded so it no longer implies 11 - 5 = 7.
+
+History entry of 2026-09-14 corrected in place, with a dated note: it had
+said `archive-no-commit/` is excluded from version control by convention.
+
+`freePort` was only called from the CLI, so a program calling
+`runPlotter` directly could still share a busy port. `runPlotter` now
+calls `freePort(int(port))` just before starting the server thread
+(accepting the string port the README example passes), stores the result
+in `self.port`, and prints the notice; the CLI no longer calls `freePort`
+itself and prints its URL from `dashlineplotter.port`. Verified: module
+use with 8150 held by another socket and port given as `'8150'` ->
+notice, `p.port == 8151`, HTTP 200 on 8151; three CLI servers on 8120 ->
+8120, 8121, 8122 as separate PIDs. README module note, `docs/SDD.md`
+(sequence, component table, port selection, state, code map) and
+`handoff.md` section 3 updated.
+
+## Session, 2026-10-07 -- click-history backlog item
+
+Added `suggestedwork.md` item 3.5 (priority row 13): the Click Data
+history lives in the `DashLinePlot` instance (`self.clickedData`,
+`self.clickedX`), so every browser viewing one server shares it. Marked
+as found by reading the source, not yet reproduced live. Proposed fix: a
+`dcc.Store` per graph, folding in the 3.4 click-history shape cleanup.

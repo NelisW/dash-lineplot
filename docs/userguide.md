@@ -368,7 +368,7 @@ four and the graph set entries are required; the rest take defaults.
 | `GraphTop` | Markdown inserted immediately above the graph. |
 | `GraphBottom` | Markdown inserted immediately below the graph. |
 | `Include` | `True` or `False`. Whether this tab appears at all. Defaults to `True`. |
-| `ToDisk` | `True` or `False`. Whether to write a standalone HTML copy into `graphs/`. |
+| `ToDisk` | `True` or `False`. Whether to write a standalone HTML copy into `graphs/`. Defaults to `False`. |
 | `commonX` | `True` or `False`. Tie every graph on this tab to one x scale. Defaults to `False`. |
 
 Any number of graphs may appear on one tab. A `Title` entry opens a new

@@ -147,3 +147,27 @@ class PlotContext:
         self.slider_max = []
 
 # Then pass ctx instead of global references.
+```
+
+---
+
+I need to produce a hardcopy of graphs made by dash-lineplot, for a specific tab only (not all the tabs).
+
+for this purpose  we must change the app as follows:
+- if the graph height is 200 or less, do not display the text entry boxes on the right of the graphs, just show the graphs.  By graph height I am referring to this variable in the json file:
+
+
+        "graph-gimbalFromxls": [
+          {
+            "Variable": "Height",
+            "Value": 300
+          }]
+
+- provide a keystroke command to trigger the hardcopy generation, to be saved to a file where the user provide the filename (e.g., via a file dialog)
+- when making the hardcopy do not display the tab names (as a browser-based print command does), only show the graphs.
+- implement a function to generate the hardcopy of the graphs in 300 dpi
+- provide the capability to print more than one page per tab, if there are too many graphs to fit on a single page
+- Provide the option in the json file to specify how many graphs per page a tab should display in the hardcopy.
+  
+
+Report on the feasibility and implementation details of the hardcopy generation feature. Provide a spec and plan before implementation.

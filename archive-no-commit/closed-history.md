@@ -453,6 +453,30 @@ Pushed to `origin/feature/modernise-and-json` (not `master`, per the
 standing constraint) after the fixes-and-hardening commit and the
 deletions commit.
 
+## Pass 5 -- 2026-10-07 (export default)
+
+### Former 2.4: HTML copies written on every run by default -- closed
+
+As found: `makeGraphSet` read the sheet's `ToDisk` row with
+`cellFlag(..., default=False)`, so a blank cell meant off, but a sheet
+with no `ToDisk` row at all fell through to `True`. Every graph of such a
+tab was written to `./graphs/` as a standalone HTML file (its own copy of
+the data and of the Plotly bundle) on every start-up. The `.gitignore`
+comment also called the flag `GraphToDisk`, while the code and
+`docs/userguide.md` both say `ToDisk`.
+
+Fix: a missing row now means off too -- exporting is an explicit
+request, not a side effect of viewing. The `.gitignore` comment now says
+`ToDisk`; `docs/userguide.md` states the `False` default; `docs/SDD.md`
+describes the behaviour.
+
+Verified: every shipped config (`dash-config.xlsx`,
+`dash-config-sim.xlsx`, `dash-config.json`, `commonx-example.json`,
+`dash-3dof.xlsx`) has an explicit `ToDisk` row on every sheet, so none of
+them changes behaviour. Variants of `commonx-example.json` run in a
+scratch directory: no row, blank, and `False` each wrote 0 files; `True`
+wrote 6.
+
 ---
 
 ## Superseded findings (later findings replaced these; kept only as a pointer)

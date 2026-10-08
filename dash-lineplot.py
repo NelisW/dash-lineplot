@@ -623,6 +623,9 @@ class DashLinePlot:
         # the values the data file actually held
         self.graphXAxis = {}
 
+        # port the server was actually started on, set by runPlotter
+        self.port = None
+
     ##########################################
     def commonClickMessage(self, grID, xClicked):
         """
@@ -889,9 +892,9 @@ class DashLinePlot:
         if not Path(grDir).exists():
             Path(grDir).mkdir()
 
-        # graphs to disk requested?
+        # graphs to disk requested? off unless a ToDisk row says otherwise
         to_disk_rows = dft[dft['Variable'] == 'ToDisk']['Value']
-        toDisk = cellFlag(to_disk_rows.values[0], default=False) if not to_disk_rows.empty else True
+        toDisk = cellFlag(to_disk_rows.values[0], default=False) if not to_disk_rows.empty else False
 
         # commonX ties every graph on this tab to one x scale: zooming or
         # panning any of them applies the same range to all, and a click on
@@ -1969,6 +1972,8 @@ class DashLinePlot:
         main control plotter function
 
         Args:
+            | port (int): requested server port. If it is not free, the next
+                             free port above it is used instead; see self.port.
             | configfile (string): configuration file defining the graphs.
             | cback (bool): use callbacks to populate the data on the tabs (default True)
                              (recommended for large data sets)
@@ -2008,8 +2013,14 @@ class DashLinePlot:
             # setup file, open a new dash window, then only render the page with the updated information 
             # as implemented in the else section here.
             if not flaskServerRunning:
+                # never share a port with a server that is already running:
+                # the browser would silently keep showing the older server's
+                # page. self.port tells the caller where the page really is.
+                self.port = freePort(int(port))
+                if self.port != int(port):
+                    print(f'\nport {port} is not free, using port {self.port} instead')
                 threading.Thread(target=self.runDash,
-                                 args=(pageLayout, port, pagetitle),
+                                 args=(pageLayout, self.port, pagetitle),
                                  daemon=True).start()
                 flaskServerRunning = True
             else:
@@ -2039,16 +2050,10 @@ if __name__ == "__main__":
 
     pagetitle = readPageTitle(args.configfile)
 
-    # never share a port with a server that is already running: the browser
-    # would silently keep showing the older server's page
-    port = freePort(args.port)
-    if port != args.port:
-        print(f'\nport {args.port} is not free, using port {port} instead')
-
     # always use callbacks: required for the slider, click data and the
     # rectangle tool to work
     dashlineplotter = DashLinePlot()
-    serving = dashlineplotter.runPlotter(port, args.configfile, cback=True,
+    serving = dashlineplotter.runPlotter(args.port, args.configfile, cback=True,
                                          datadir=args.datadir, pagetitle=pagetitle)
 
     # loadData returns False when a data file named in the config is missing,
@@ -2060,7 +2065,7 @@ if __name__ == "__main__":
 
     # runDash runs in a daemon thread, so the main thread has to stay alive
     # for the server to keep serving.
-    print(f'\nserving on http://127.0.0.1:{port}/   (Ctrl+C to stop)\n')
+    print(f'\nserving on http://127.0.0.1:{dashlineplotter.port}/   (Ctrl+C to stop)\n')
     try:
         threading.Event().wait()
     except KeyboardInterrupt:

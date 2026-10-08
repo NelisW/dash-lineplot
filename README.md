@@ -145,9 +145,10 @@ To use as a module in another application:
         dashlineplotter = DashLinePlot()
         dashlineplotter.runPlotter(port, plotConfig, useCallbacks)
 
-   `runPlotter` uses the port it is given, even if another server is
-   already listening there. To get the command line's behaviour, pass
-   `freePort(8050)` (from the same module) as the port instead.
+   As on the command line, if the requested port is not free,
+   `runPlotter` uses the next free port above it and prints a notice.
+   The port actually used is in `dashlineplotter.port` once `runPlotter`
+   has started the server.
 
 Notes from https://dash.plot.ly/getting-started:
 

@@ -112,7 +112,7 @@ configuration. Several processes may run at once, each on its own port
 
 | Component | Location | Responsibility |
 |---|---|---|
-| CLI entry point | `dash-lineplot.py`, `if __name__ == "__main__"` block | Parse `--configfile`, `--port`, `--datadir`; choose a free port; start the plotter; keep the main thread alive. |
+| CLI entry point | `dash-lineplot.py`, `if __name__ == "__main__"` block | Parse `--configfile`, `--port`, `--datadir`; start the plotter; print the URL of the port it chose; keep the main thread alive. |
 | Configuration reader | `readConfigTables`, `readPageTitle`, `DashLinePlot.loadConfig` | Read either config format into one table shape; label rows by graph set and trace. |
 | Block resolver | `resolveSetContexts` | Work out which data file, x column, x label/format/scale/offset and height apply to each graph on a sheet. |
 | Data loader | `DashLinePlot.loadData`, `readdatafile`, `readJsonData`, `splitDataRef` | Load every referenced data file once, into `self.datafiles`. |
@@ -130,8 +130,6 @@ configuration. Several processes may run at once, each on its own port
 
 1. The CLI parses its arguments and calls `readPageTitle`, which reads the
    configuration's `header` table for `Pagetitle`.
-1. `freePort(args.port)` returns the first verified free port at or above
-   the requested one. If it differs, the CLI prints a notice.
 1. `DashLinePlot.runPlotter` runs, in order:
     1. `loadConfig`: reads the configuration into the module-level
        `dfPlotterHeader` and `dfPlotterConfig`, and sets `pageDensity`.
@@ -141,11 +139,14 @@ configuration. Several processes may run at once, each on its own port
     1. `prepareGraphs`: calls `makeGraphSet` for each included tab, filling
        the module-level `divSets`, `graphList` and `graphTabs`.
     1. `makePage`: builds the `dcc.Tabs` layout.
-    1. Starts `runDash` in a daemon thread. `runDash` creates the Dash app
+    1. `freePort` returns the first verified free port at or above the
+       requested one, stored in `self.port`; if it differs, a notice is
+       printed.
+    1. Starts `runDash` on `self.port` in a daemon thread. `runDash` creates the Dash app
        (module-level `dashApp`), registers callbacks through
        `setupCallbacks`, and calls `dashApp.run(debug=False,
        use_reloader=False)`.
-1. The main thread prints the URL and blocks on `threading.Event().wait()`
+1. The main thread prints the URL, from `self.port`, and blocks on `threading.Event().wait()`
    until Ctrl+C.
 
 `runPlotter` also accepts `flaskServerRunning=True`, in which case it
@@ -332,7 +333,9 @@ Each tab also gets the header's `PageTop`, the sheet's `GraphTop` and
 
 ### Export to disk
 
-When a tab's export flag is on, `graphToDisk` writes each figure to
+Export is off unless the sheet's `ToDisk` row says `True`; a missing row
+and a blank cell both mean off. When it is on, `graphToDisk` writes each
+figure to
 `./graphs/<sheet>#<set>.html` through `plotly.offline.plot`. The
 `./graphs` directory is created if missing.
 
@@ -384,10 +387,16 @@ accepts a candidate only if both tests pass:
 
 The bind test runs first because it fails immediately, whereas on Windows
 a refused loopback connect waits for the full timeout; testing connect
-first made skipping a reserved range take minutes. Only the CLI calls
-`freePort`; `runPlotter` uses whatever port it is given. Two processes
-started at the same instant can still pick the same port, because the
-port is released between the test and the server's own bind.
+first made skipping a reserved range take minutes.
+
+`runPlotter` calls `freePort` immediately before starting the server
+thread, so the CLI and a program using the module get the same
+behaviour. The port in use is kept in `self.port` (`None` until a server
+has been started), which is where the CLI takes the printed URL from.
+When `runPlotter` is called with `flaskServerRunning=True` no server is
+started and no port is chosen. Two processes started at the same instant
+can still pick the same port, because the port is released between the
+test and the server's own bind.
 
 ## Browser-side behaviour
 
@@ -428,7 +437,8 @@ one's state.
 
 Instance attributes on `DashLinePlot`, written by callbacks:
 `clickedData` and `clickedX` (click history), plus `graphTraces`,
-`graphXAxis` and `commonXGroups`, built during graph construction. Click
+`graphXAxis` and `commonXGroups`, built during graph construction, and
+`port`, set by `runPlotter` when it starts the server. Click
 history is held by the server, not the browser, so every browser window
 open on the same server shares one click history per graph.
 
@@ -493,10 +503,6 @@ in `suggestedwork.md`.
 - Click history is shared by every browser viewing the same server.
 - `suppress_callback_exceptions` is on globally, so a callback whose
   target id is wrong is silently ignored.
-- When a sheet has no `ToDisk` row at all, `makeGraphSet` treats export
-  as on and writes `./graphs/*.html` on every run; a blank `ToDisk` cell
-  means off. TODO: confirm whether "no row" should also mean off; the two
-  cases currently disagree.
 - Format dispatch tests whether the extension contains `xls` or `json`,
   rather than matching it exactly, and every other extension is read as
   delimited text.
@@ -522,17 +528,17 @@ Line ranges in `dash-lineplot.py` as of 2026-10-07.
 | `isJsonConfig`, `readConfigTables` | 476-536 |
 | `readPageTitle` | 539-558 |
 | `freePort` | 561-595 |
-| `DashLinePlot.__init__` | 600-624 |
-| `commonClickMessage`, `commonSelectMessage` | 627-748 |
-| `generateFeedbackBoxes` | 751-842 |
-| `graphToDisk` | 845-861 |
-| `makeGraphSet` | 865-1302 |
-| `prepareGraphs` | 1305-1350 |
-| `makePage` | 1353-1430 |
-| `loadConfig` | 1433-1510 |
-| `readdatafile` | 1513-1566 |
-| `loadData` | 1569-1637 |
-| `runDash` | 1641-1684 |
-| `setupCallbacks` | 1686-1963 |
-| `runPlotter` | 1966-2019 |
-| CLI entry point | 2024-end |
+| `DashLinePlot.__init__` | 600-627 |
+| `commonClickMessage`, `commonSelectMessage` | 630-751 |
+| `generateFeedbackBoxes` | 754-845 |
+| `graphToDisk` | 848-864 |
+| `makeGraphSet` | 868-1305 |
+| `prepareGraphs` | 1308-1353 |
+| `makePage` | 1356-1433 |
+| `loadConfig` | 1436-1513 |
+| `readdatafile` | 1516-1569 |
+| `loadData` | 1572-1640 |
+| `runDash` | 1644-1687 |
+| `setupCallbacks` | 1689-1966 |
+| `runPlotter` | 1969-2030 |
+| CLI entry point | 2035-end |
