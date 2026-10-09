@@ -3,34 +3,11 @@
 Status: 2026-10-08 -- browser-served Dash viewer for time-series data,
 configured by an Excel workbook or an equivalent JSON file, reading CSV,
 XLSX and JSON (including multi-rate JSON) data. Work happens directly on
-`master`. Committed up to `8313ec9` (hardcopy to the working directory or
-a chosen folder).
-
-Uncommitted in the working tree when this was written -- check
-`git status`, and note that several new files still have to be added,
-not just staged as modifications (`tests/test_commonx_range.py` and
-`tests/test_legend.py` were untracked):
-
-- A `yValue` row may name its own x column (`xValue` cell), so one graph
-  can plot one quantity from several files with differently named time
-  columns; demonstrated by `multisource-example.json`.
-- A blank `PageBottom` header cell no longer crashes the page build.
-- A `commonX` tab's graphs start on, and return to, the tab's exact x
-  extent.
-- Legend settings at page, tab and graph level: `LegendTransparency`,
-  `LegendOrientation`, `LegendX`, `LegendY`.
-- Every example carries `LegendTransparency` 0.7; both workbooks were
-  edited through their XML and `dash-config.json` regenerated from the
-  workbook.
-- `suggestedwork.md` re-triaged, `docs/userguide.md` and `docs/SDD.md`
-  brought to current status with history and legacy text removed.
-
-Two working-tree items are the user's, not an agent's: a modified
-`archive-no-commit/prompt.md`, and an untracked `engagementproforma.json`
-in the repository root. Leave both alone.
-
-No work is in progress; the next work is whatever the user picks from
-`suggestedwork.md` (section 5).
+`master`. Everything is committed, up to `bc35d1a` (legend settings,
+per-trace x column, `commonX` start range, documentation rewrite), and
+the working tree was clean when this was written; 43 pytest and 8 node
+tests pass on it. No work is in progress; the next work is whatever the
+user picks from `suggestedwork.md` (section 5).
 
 History-file cadence: size threshold, 30 KB.
 

@@ -281,3 +281,15 @@ section 5 is a pointer plus a one-line summary and the citation-refresh
 method; section 6 states 43 pytest + 8 node tests and the browser-pane
 testing workarounds. The previous version is kept only in the
 scratchpad.
+
+## Session, 2026-10-08 -- user committed bc35d1a
+
+The user committed all of the day's remaining work as bc35d1a (legend
+settings, per-trace x column, commonX start range, PageBottom fix,
+dash-config.json regeneration, documentation rewrite, handoff refresh,
+the new tests); the working tree was then clean, and 43 pytest + 8 node
+tests passed on it. The two workbooks shrank by about 4 KB each in the
+commit: the XML edits rewrote each zip with Python's own deflate level,
+while every entry other than the edited sheets was checked byte-identical
+at the time, so the difference is compression only. handoff.md status
+updated in place.
